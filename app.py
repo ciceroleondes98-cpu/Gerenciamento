@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 # Configuração da página para um visual limpo e moderno
 st.set_page_config(page_title="Gerenciador de Banca", page_icon="💰", layout="centered")
 
-# Estilização minimalista via CSS
+# Estilização minimalista via CSS (Corrigido para a versão atual do Streamlit)
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -14,7 +14,7 @@ st.markdown("""
     .meta-atingida { color: #2ecc71; font-weight: bold; font-size: 18px; }
     .meta-abaixo { color: #e74c3c; font-weight: bold; font-size: 18px; }
     </style>
-    """, unsafe_scale=True)
+    """, unsafe_allow_html=True)
 
 st.title("💰 Controle de Rendimentos")
 
