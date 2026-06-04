@@ -74,19 +74,23 @@ st.title("💰 Controle de Rendimentos")
 
 # --- PARAMETRIZAÇÃO DA BANCA INICIAL ---
 st.subheader("Configuração da Banca e Período")
-col_banca1, col_banca2, col_banca3 = st.columns(3)
+
+# Dividindo a tela em 4 colunas dinâmicas
+col_banca1, col_banca2, col_banca3, col_banca4 = st.columns(4)
 
 with col_banca1:
-    saldo_banca_inicial = st.number_input("Saldo Inicial Geral (R$):", min_value=0.0, value=200.0, step=10.0)
+    saldo_banca_inicial = st.number_input("Saldo Inicial (R$):", min_value=0.0, value=200.0, step=10.0)
 
 with col_banca2:
     meta_final = st.number_input("Meta Final Geral (R$):", min_value=1.0, value=500.0, step=50.0)
 
-# NOVO CAMPO: Quantidade de dias totalmente dinâmica
+# AJUSTE: Novo campo para preenchimento livre da meta diária
 with col_banca3:
-    quantidade_dias = st.number_input("Quantidade de Dias:", min_value=1, max_value=365, value=30, step=1)
+    meta_diaria = st.number_input("Meta Diária (R$):", min_value=0.0, value=10.0, step=1.0)
 
-meta_diaria = 10.0
+with col_banca4:
+    quantidade_dias = st.number_input("Qtd de Dias:", min_value=1, max_value=365, value=30, step=1)
+
 
 # Inicializar ou reajustar a estrutura de dados baseada na quantidade de dias escolhida
 if 'tabela_fixa' not in st.session_state or len(st.session_state.tabela_fixa) != quantidade_dias:
@@ -97,11 +101,10 @@ if 'tabela_fixa' not in st.session_state or len(st.session_state.tabela_fixa) !=
         'Preenchido': [False] * quantidade_dias
     })
 else:
-    # Caso os dias continuem os mesmos, garante que as datas estejam certas (útil se mudar algo)
     datas_fixas = [(datetime.date(2026, 6, 1) + datetime.timedelta(days=i)).strftime('%d/%m/%Y') for i in range(quantidade_dias)]
     st.session_state.tabela_fixa['Data'] = datas_fixas
 
-# Função para calcular toda a tabela em cascata baseada nos rendimentos salvos
+# Função para calcular toda a tabela em cascata baseada nos rendimentos salvos e metas dinâmicas
 def calcular_tabela_dinamica():
     df = st.session_state.tabela_fixa.copy()
     saldos_iniciais = []
@@ -112,23 +115,19 @@ def calcular_tabela_dinamica():
     saldo_atual = saldo_banca_inicial
     
     for idx, row in df.iterrows():
-        # O saldo inicial do dia atual é o saldo final do dia anterior
         saldos_iniciais.append(saldo_atual)
         
-        # Meta do dia calculada em progressão acumulada perfeita
+        # Meta do dia calculada em progressão acumulada baseada no novo campo dinâmico
         meta_dia_calculada = saldo_banca_inicial + (meta_diaria * (idx + 1))
         metas_do_dia.append(meta_dia_calculada)
         
-        # Se o usuário preencheu o rendimento, acumula. Senão, mantém estável.
         rendimento = row['✏️ Rendimento (R$)']
         saldo_final_dia = saldo_atual + rendimento
         saldos_finais.append(saldo_final_dia)
         
-        # Progresso baseado na meta final geral
         prog_porc = min((saldo_final_dia / meta_final) * 100, 100.0)
         progressos.append(f"{prog_porc:.1f}%")
         
-        # Atualiza a variável de controle para a próxima linha
         saldo_atual = saldo_final_dia
         
     df['Saldo Inicial (R$)'] = saldos_iniciais
@@ -150,11 +149,11 @@ else:
 progresso_porcentagem = min((ultimo_saldo / meta_final) * 100, 100.0)
 progresso_barra = min(ultimo_saldo / meta_final, 1.0)
 
-# Card informativo
+# Card informativo dinâmico
 st.markdown(f"""
 <div class="banca-card">
     <span style="color: #6b7280; font-size: 14px; font-weight: bold; text-transform: uppercase;">Resumo do Objetivo</span>
-    <h3 style="margin: 5px 0 10px 0;">🎯 Meta Diária: R$ {meta_diaria:,.2f} (Acumulativa)</h3>
+    <h3 style="margin: 5px 0 10px 0;">🎯 Meta Diária Definida: R$ {meta_diaria:,.2f}</h3>
     <p style="font-size: 16px; margin: 0;">
         <b>Saldo Atualizado:</b> R$ {ultimo_saldo:,.2f} ➔ <b>Alvo Final:</b> R$ {meta_final:,.2f} | <b>Período:</b> {quantidade_dias} dias
     </p>
@@ -176,6 +175,7 @@ with tab1:
     
     valor_rendimento = st.number_input("Valor do Rendimento (R$):", min_value=0.0, value=0.0, step=1.0)
     
+    # O indicativo agora reage em tempo real ao valor do novo campo dinâmico
     if valor_rendimento < meta_diaria:
         falta = meta_diaria - valor_rendimento
         st.markdown(f"<p class='meta-abaixo'>⚠️ Abaixo da meta! Faltam R$ {falta:,.2f} para atingir o objetivo mínimo do dia.</p>", unsafe_allow_html=True)
@@ -209,7 +209,7 @@ with tab1:
     else:
         st.markdown("<p style='color: #9ca3af;'>Nenhum rendimento lançado ainda.</p>", unsafe_allow_html=True)
 
-# --- ABA 2: TABELA GERAL (ORGANIZADA DE FORMA FIXA DINÂMICA) ---
+# --- ABA 2: TABELA GERAL ---
 with tab2:
     st.subheader(f"Tabela de Movimentações Automática ({quantidade_dias} Dias)")
     colunas_ordenadas = ['Data', 'Saldo Inicial (R$)', '✏️ Rendimento (R$)', '🎯 Meta do Dia (R$)', 'Saldo Final (R$)', 'Progresso (%)']
