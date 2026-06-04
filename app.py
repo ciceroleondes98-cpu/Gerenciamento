@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 # 1. Configuração da página para um visual limpo e moderno
 st.set_page_config(page_title="Gerenciador de Banca", page_icon="💰", layout="centered")
 
-# 2. Estilização com a nova paleta de cores (Gradiente escuro, textos esmeralda e cards brancos)
+# 2. Estilização com a paleta de cores (Gradiente escuro, textos esmeralda e cards brancos)
 st.markdown("""
     <style>
     /* Fundo da página com gradiente escuro moderno */
@@ -72,16 +72,8 @@ st.markdown("""
 
 st.title("💰 Controle de Rendimentos")
 
-# 3. Inicialização do Banco de Dados e Variáveis na memória do App
-if 'historico' not in st.session_state:
-    st.session_state.historico = pd.DataFrame(columns=[
-        'Data', 'Saldo Inicial (R$)', '✏️ Rendimento (R$)', '🎯 Meta do Dia (R$)', 'Saldo Final (R$)', 'Progresso (%)'
-    ])
-
-# --- TELA INICIAL: CONFIGURAÇÃO DINÂMICA ---
+# --- PARAMETRIZAÇÃO DA BANCA INICIAL ---
 st.subheader("Configuração da Banca")
-
-# Ajuste 2: Lado a lado para Saldo Inicial e Meta Final
 col_banca1, col_banca2 = st.columns(2)
 
 with col_banca1:
@@ -90,9 +82,60 @@ with col_banca1:
 with col_banca2:
     meta_final = st.number_input("Digite a Meta Final Geral (R$):", min_value=1.0, value=500.0, step=50.0)
 
-# Cálculo automático baseado no histórico
 meta_diaria = 10.0
-ultimo_saldo = st.session_state.historico['Saldo Final (R$)'].iloc[-1] if not st.session_state.historico.empty else saldo_banca_inicial
+
+# AJUSTE 3: Criar uma estrutura fixa de 30 dias a partir de 01/06/2026 se não existir na memória
+if 'tabela_fixa' not in st.session_state:
+    datas_fixas = [(datetime.date(2026, 6, 1) + datetime.timedelta(days=i)).strftime('%d/%m/%Y') for i in range(30)]
+    st.session_state.tabela_fixa = pd.DataFrame({
+        'Data': datas_fixas,
+        '✏️ Rendimento (R$)': [0.0] * 30,
+        'Preenchido': [False] * 30  # Marcador interno para saber se você já digitou aquele dia
+    })
+
+# AJUSTE 1 & 3: Função inteligente para calcular toda a tabela em cascata baseada nos rendimentos salvos
+def calcular_tabela_dinamica():
+    df = st.session_state.tabela_fixa.copy()
+    saldos_iniciais = []
+    metas_do_dia = []
+    saldos_finais = []
+    progressos = []
+    
+    saldo_atual = saldo_banca_inicial
+    
+    for idx, row in df.iterrows():
+        # O saldo inicial do dia atual é o saldo final do dia anterior (saldo_atual acumulado)
+        saldos_iniciais.append(saldo_atual)
+        metas_do_dia.append(saldo_atual + meta_diaria)
+        
+        # Se o usuário preencheu o rendimento, calcula o ganho real. Caso contrário, mantém o saldo.
+        rendimento = row['✏️ Rendimento (R$)']
+        saldo_final_dia = saldo_atual + rendimento
+        saldos_finais.append(saldo_final_dia)
+        
+        # Progresso baseado na meta final geral
+        prog_porc = min((saldo_final_dia / meta_final) * 100, 100.0)
+        progressos.append(f"{prog_porc:.1f}%")
+        
+        # O saldo final deste dia vira o inicial do próximo ciclo
+        saldo_atual = saldo_final_dia
+        
+    df['Saldo Inicial (R$)'] = saldos_iniciais
+    df['🎯 Meta do Dia (R$)'] = metas_do_dia
+    df['Saldo Final (R$)'] = saldos_finais
+    df['Progresso (%)'] = progressos
+    return df
+
+# Gerar tabela calculada
+df_calculado = calcular_tabela_dinamica()
+
+# Encontrar os dados consolidados do último dia preenchido para exibir no topo
+df_preenchidos = df_calculado[st.session_state.tabela_fixa['Preenchido'] == True]
+if not df_preenchidos.empty:
+    ultimo_saldo = df_preenchidos['Saldo Final (R$)'].iloc[-1]
+else:
+    ultimo_saldo = saldo_banca_inicial
+
 progresso_porcentagem = min((ultimo_saldo / meta_final) * 100, 100.0)
 progresso_barra = min(ultimo_saldo / meta_final, 1.0)
 
@@ -107,7 +150,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Ajuste 1: Barra de progresso com a porcentagem indicada textualmente acima/ao lado
+# Barra de progresso com a porcentagem indicada
 st.markdown(f"**Progresso Geral:** {progresso_porcentagem:.1f}%")
 st.progress(progresso_barra)
 
@@ -118,7 +161,10 @@ tab1, tab2, tab3 = st.tabs(["📝 Registro", "📊 Tabela Geral", "📈 Evoluç�
 with tab1:
     st.subheader("Novo Registro Diário")
     
-    data_registro = st.date_input("Data:", datetime.date.today())
+    # Caixa de seleção com os 30 dias mapeados para ficar fácil de escolher qual preencher
+    datas_lista = st.session_state.tabela_fixa['Data'].tolist()
+    data_selecionada = st.selectbox("Escolha a Data para Registrar/Alterar:", datas_lista)
+    
     valor_rendimento = st.number_input("Valor do Rendimento (R$):", min_value=0.0, value=0.0, step=1.0)
     
     # Indicativo Inteligente
@@ -129,79 +175,76 @@ with tab1:
         st.markdown(f"<p class='meta-atingida'>✅ Meta atingida!</p>", unsafe_allow_html=True)
         
     if st.button("Salvar Registro"):
-        saldo_inicial_linha = ultimo_saldo
-        meta_dia_linha = saldo_inicial_linha + meta_diaria
-        saldo_final_linha = saldo_inicial_linha + valor_rendimento
-        progresso_linha = min((saldo_final_linha / meta_final) * 100, 100.0)
-        
-        nova_linha = {
-            'Data': data_registro.strftime('%d/%m/%Y'),
-            'Saldo Inicial (R$)': saldo_inicial_linha,
-            '✏️ Rendimento (R$)': valor_rendimento,
-            '🎯 Meta do Dia (R$)': meta_dia_linha,
-            'Saldo Final (R$)': saldo_final_linha,
-            'Progresso (%)': f"{progresso_linha:.1f}%"
-        }
-        
-        st.session_state.historico = pd.concat([st.session_state.historico, pd.DataFrame([nova_linha])], ignore_index=True)
-        st.success("Registrado com sucesso!")
+        # Atualiza o rendimento na linha correspondente da tabela fixa na memória
+        idx_data = st.session_state.tabela_fixa[st.session_state.tabela_fixa['Data'] == data_selecionada].index[0]
+        st.session_state.tabela_fixa.at[idx_data, '✏️ Rendimento (R$)'] = valor_rendimento
+        st.session_state.tabela_fixa.at[idx_data, 'Preenchido'] = True
+        st.success(f"Dados de {data_selecionada} registrados! Tabela recalculada automaticamente.")
         st.rerun()
 
     st.markdown("---")
-    st.subheader("Histórico de Registros")
+    st.subheader("Histórico de Registros Modificados")
     
-    # Ajuste 3: Histórico com opção de Excluir usando uma lixeira de forma limpa
-    if not st.session_state.historico.empty:
-        for idx, row in st.session_state.historico.iterrows():
+    # Exibe apenas os dias que você já preencheu de fato, com a lixeira para zerar se quiser
+    if not df_preenchidos.empty:
+        for idx, row in df_preenchidos.iterrows():
             col_hist1, col_hist2, col_hist3 = st.columns([3, 3, 1])
             with col_hist1:
                 st.markdown(f"📅 **{row['Data']}**")
             with col_hist2:
                 st.markdown(f"💰 Rendimento: **R$ {row['✏️ Rendimento (R$)']:,.2f}**")
             with col_hist3:
-                # Botão de excluir com identificador único da linha
                 if st.button("🗑️", key=f"del_{idx}"):
-                    st.session_state.historico = st.session_state.historico.drop(idx).reset_index(drop=True)
-                    st.success("Registro removido!")
+                    st.session_state.tabela_fixa.at[idx, '✏️ Rendimento (R$)'] = 0.0
+                    st.session_state.tabela_fixa.at[idx, 'Preenchido'] = False
+                    st.success("Registro resetado!")
                     st.rerun()
             st.markdown("<hr style='margin:0 0 10px 0; border-color: #374151;' />", unsafe_allow_html=True)
     else:
-        st.markdown("<p style='color: #9ca3af;'>Nenhum registro feito ainda.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #9ca3af;'>Nenhum rendimento lançado ainda.</p>", unsafe_allow_html=True)
 
-# --- ABA 2: TABELA GERAL ---
+# --- ABA 2: TABELA GERAL (ORGANIZADA DE FORMA FIXA) ---
 with tab2:
-    st.subheader("Tabela de Movimentações Automática")
-    if not st.session_state.historico.empty:
-        st.dataframe(st.session_state.historico, hide_index=True)
-    else:
-        st.markdown("<p style='color: #9ca3af;'>Preencha o rendimento na Aba 1 para gerar os dados automáticos.</p>", unsafe_allow_html=True)
+    st.subheader("Tabela de Movimentações Automática (30 Dias)")
+    
+    # Organizando a ordem das colunas para bater com o solicitado
+    colunas_ordenadas = ['Data', 'Saldo Inicial (R$)', '✏️ Rendimento (R$)', '🎯 Meta do Dia (R$)', 'Saldo Final (R$)', 'Progresso (%)']
+    st.dataframe(df_calculado[colunas_ordenadas], hide_index=True, use_container_width=True)
 
-# --- ABA 3: EVOLUÇÃO ---
+# --- ABA 3: EVOLUÇÃO (GRÁFICO AJUSTADO) ---
 with tab3:
     st.subheader("Gráfico de Evolução da Banca")
-    if not st.session_state.historico.empty:
+    
+    # Exibe o gráfico se houver dados lançados
+    if not df_preenchidos.empty:
         fig = go.Figure()
         
-        # Ajuste Gráfico: Barra do Saldo Final em Verde (#10b981)
+        # AJUSTE 2: Barra de Saldo Final Verde, mais fina (bargap/barmode) e com texto dentro
         fig.add_trace(go.Bar(
-            x=st.session_state.historico['Data'],
-            y=st.session_state.historico['Saldo Final (R$)'],
+            x=df_preenchidos['Data'],
+            y=df_preenchidos['Saldo Final (R$)'],
             name='Saldo Final Realizado',
-            marker_color='#10b981'
+            marker_color='#10b981',
+            text=df_preenchidos['Saldo Final (R$)'].apply(lambda x: f"R${x:,.0f}"),
+            textposition='inside', # Valor dentro da barra
+            textfont=dict(size=12, color='white')
         ))
         
-        # Ajuste Gráfico: Barra da Meta do Dia em Azul (#3b82f6)
+        # AJUSTE 2: Barra da Meta do Dia Azul, mais fina e com texto dentro
         fig.add_trace(go.Bar(
-            x=st.session_state.historico['Data'],
-            y=st.session_state.historico['🎯 Meta do Dia (R$)'],
+            x=df_preenchidos['Data'],
+            y=df_preenchidos['🎯 Meta do Dia (R$)'],
             name='Meta do Dia',
-            marker_color='#3b82f6'
+            marker_color='#3b82f6',
+            text=df_preenchidos['🎯 Meta do Dia (R$)'].apply(lambda x: f"R${x:,.0f}"),
+            textposition='inside', # Valor dentro da barra
+            textfont=dict(size=12, color='white')
         ))
         
-        # Ajuste Gráfico: Linha da Meta Final Dinâmica em Vermelho Suave (#f87171)
+        # Linha da Meta Final Dinâmica em Vermelho Suave
         fig.add_trace(go.Scatter(
-            x=st.session_state.historico['Data'],
-            y=[meta_final] * len(st.session_state.historico),
+            x=df_preenchidos['Data'],
+            y=[meta_final] * len(df_preenchidos),
             mode='lines',
             name='Meta Final Definida',
             line=dict(color='#f87171', width=3, dash='dash')
@@ -214,13 +257,15 @@ with tab3:
             xaxis_title="Dias",
             yaxis_title="Valores (R$)",
             barmode='group',
+            bargap=0.3,       # AJUSTE 2: Deixa as colunas dos grupos mais finas e modernas
+            bargroupgap=0.1,  # Ajuste fino entre as duas barras do mesmo dia
             legend=dict(font=dict(color='#ffffff'))
         )
         
-        # Ajustando grades para não quebrar o visual escuro
+        # Customização das grades de fundo do gráfico
         fig.update_xaxes(showgrid=True, gridcolor='#374151')
         fig.update_yaxes(showgrid=True, gridcolor='#374151')
         
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.markdown("<p style='color: #9ca3af;'>Adicione dados para visualizar o gráfico de evolução.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #9ca3af;'>Insira dados de rendimento para visualizar as barras de evolução.</p>", unsafe_allow_html=True)
