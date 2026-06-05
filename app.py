@@ -29,7 +29,7 @@ val_saldo, val_meta_f, val_meta_d, val_dias = 200.0, 500.0, 10.0, 30
 dados_rendimentos = pd.DataFrame()
 url_planilha = ""
 
-# 2. Leitura dos Secrets e Planilha
+# 2. Leitura segura dos Secrets e tabelas do Google Sheets
 try:
     if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
         url_planilha = st.secrets["connections"]["gsheets"]["spreadsheet"]
@@ -39,18 +39,4 @@ try:
         dados_config = pd.read_csv(url_config)
         dados_rendimentos = pd.read_csv(url_rendimentos)
         
-        if not dados_config.empty:
-            val_saldo = float(dados_config['saldo_inicial'].iloc[0])
-            val_meta_f = float(dados_config['meta_final'].iloc[0])
-            val_meta_d = float(dados_config['meta_diaria'].iloc[0])
-            val_dias = int(dados_config['qtd_dias'].iloc[0])
-except Exception as e:
-    st.error(f"Erro ao carregar dados da planilha: {e}")
-
-# 3. Inputs na tela (buscando os valores direto da aba 'config' da sua planilha)
-st.subheader("⚙️ Configuração da Banca e Período")
-col1, col2, col3, col4 = st.columns(4)
-with col1: saldo_banca_inicial = st.number_input("Saldo Inicial (R$):", value=val_saldo, step=10.0)
-with col2: meta_final = st.number_input("Meta Final Geral (R$):", value=val_meta_f, step=50.0)
-with col3: meta_diaria = st.number_input("Meta Diária (R$):", value=val_meta_d, step=1.0)
-with col4: quantidade_dias = st.number_input("Qtd de Dias:", value=val_dias,
+        if not
