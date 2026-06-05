@@ -178,4 +178,36 @@ with tab1:
         
     if st.button("Confirmar Registro"):
         idx_data = st.session_state.tabela_memoria[st.session_state.tabela_memoria['Data'] == data_selecionada].index[0]
-        st.
+        st.session_state.tabela_memoria.at[idx_data, '📈 Rendimento (R$)'] = valor_rendimento
+        st.session_state.tabela_memoria.at[idx_data, 'Preenchido'] = True
+        st.success("Gravado com sucesso!")
+        st.rerun()
+
+    st.markdown("---")
+    st.subheader("⏱️ Histórico Recente")
+    if not df_preenchidos.empty:
+        for idx, row in df_preenchidos.iterrows():
+            col_hist1, col_hist2, col_hist3 = st.columns([3, 3, 1])
+            with col_hist1: st.markdown(f"📅 **{row['Data']}**")
+            with col_hist2: st.markdown(f"💰 Rendimento: <span style='color: #f1b813; font-weight: bold;'>R$ {row['📈 Rendimento (R$)']:,.2f}</span>", unsafe_allow_html=True)
+            with col_hist3:
+                if st.button("🗑️", key=f"del_{idx}"):
+                    st.session_state.tabela_memoria.at[idx, '📈 Rendimento (R$)'] = 0.0
+                    st.session_state.tabela_memoria.at[idx, 'Preenchido'] = False
+                    st.rerun()
+
+with tab2:
+    st.subheader("📋 Tabela Geral de Rendimentos")
+    st.dataframe(df_calculado[['Data', 'Saldo Inicial (R$)', '📈 Rendimento (R$)', '🏆 Meta do Dia (R$)', 'Saldo Final (R$)', 'Progresso (%)']], hide_index=True, use_container_width=True)
+
+with tab3:
+    st.subheader("📊 Gráfico de Performance")
+    if not df_preenchidos.empty:
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=df_preenchidos['Data'], y=df_preenchidos['Saldo Final (R$)'], name='Saldo Atual', marker_color='#f1b813'))
+        fig.add_trace(go.Bar(x=df_preenchidos['Data'], y=df_preenchidos['🏆 Meta do Dia (R$)'], name='Meta Esperada', marker_color='#3b82f6'))
+        fig.add_trace(go.Scatter(x=df_preenchidos['Data'], y=[meta_final]*len(df_preenchidos), mode='lines', name='Alvo Final', line=dict(color='#ef4444', width=3, dash='dash')))
+        
+        fig.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)', 
+            plot_bgcolor='rgba(0,0
