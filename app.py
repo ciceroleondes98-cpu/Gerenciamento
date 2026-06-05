@@ -28,21 +28,21 @@ st.title("💰 Controle de Rendimentos Pro")
 
 # --- CONEXÃO COM O GOOGLE SHEETS ---
 try:
-    # Cria a conexão utilizando o segredo configurado no Streamlit (.streamlit/secrets.toml)
+    # Conecta usando a configuração do secrets.toml
     conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # Carrega as configurações (Aba: config)
+    # Carrega as configurações da aba 'config'
     df_conf = conn.read(worksheet="config", ttl=0)
     val_saldo = float(df_conf['saldo_inicial'].iloc[0])
     val_meta_f = float(df_conf['meta_final'].iloc[0])
     val_meta_d = float(df_conf['meta_diaria'].iloc[0])
     val_dias = int(df_conf['qtd_dias'].iloc[0])
     
-    # Carrega os rendimentos históricos (Aba: rendimentos)
+    # Carrega os rendimentos da aba 'rendimentos'
     df_rend_sheets = conn.read(worksheet="rendimentos", ttl=0)
     df_rend_sheets['Rendimento'] = pd.to_numeric(df_rend_sheets['Rendimento'], errors='coerce').fillna(0.0)
 except Exception as e:
-    # Valores padrão de segurança caso a planilha ainda esteja sem dados ou desconectada
+    # Valores padrão de segurança caso a planilha esteja vazia ou desconectada
     val_saldo, val_meta_f, val_meta_d, val_dias = 200.0, 500.0, 10.0, 30
     df_rend_sheets = pd.DataFrame(columns=['Data', 'Rendimento', 'Preenchido'])
 
@@ -59,7 +59,7 @@ with col_banca3:
 with col_banca4:
     quantidade_dias = st.number_input("Qtd de Dias:", min_value=1, max_value=365, value=val_dias, step=1)
 
-# Botão para salvar parâmetros de configuração diretamente no Sheets
+# Botão para salvar parâmetros na aba 'config'
 if st.button("💾 Salvar Parâmetros da Banca"):
     df_salvar_conf = pd.DataFrame({
         'saldo_inicial': [saldo_banca_inicial],
@@ -71,25 +71,23 @@ if st.button("💾 Salvar Parâmetros da Banca"):
     st.success("Configurações da banca atualizadas no Google Sheets!")
     st.rerun()
 
-# --- ESTRUTURAÇÃO DO BANCO DE MEMÓRIA ---
+# --- ESTRUTURAÇÃO DO BANCO DE DADOS DE RENDIMENTOS ---
 datas_fixas = [(datetime.date(2026, 6, 1) + datetime.timedelta(days=i)).strftime('%d/%m/%Y') for i in range(quantidade_dias)]
 
-# Se a planilha veio vazia, monta a estrutura inicial de dias
+# Se a planilha estiver vazia, cria a estrutura inicial automática de linhas
 if df_rend_sheets.empty or len(df_rend_sheets) != quantidade_dias:
     df_base = pd.DataFrame({
         'Data': datas_fixas,
         'Rendimento': [0.0] * quantidade_dias,
         'Preenchido': ['Não'] * quantidade_dias
     })
-    # Sincroniza os dias gerados para o Sheets na primeira execução
     if df_rend_sheets.empty:
         conn.update(worksheet="rendimentos", data=df_base)
     df_rend_sheets = df_base.copy()
 
-# Sincroniza a tabela carregada com o estado de sessão do Streamlit
 st.session_state.tabela_memoria = df_rend_sheets.copy()
 
-# --- LÓGICA DE CÁLCULO EM CASCATA ---
+# --- LÓGICA DE CÁLCULO FINANCEIRO EM CASCATA ---
 def calcular_tabela_dinamica():
     df = st.session_state.tabela_memoria.copy()
     saldos_iniciais, metas_do_dia, saldos_finais, progressos = [], [], [], []
@@ -119,7 +117,7 @@ df_preenchidos = df_calculado[df_calculado['Preenchido'] == 'Sim']
 ultimo_saldo = df_preenchidos['Saldo Final (R$)'].iloc[-1] if not df_preenchidos.empty else saldo_banca_inicial
 progresso_porcentagem = min((ultimo_saldo / meta_final) * 100, 100.0)
 
-# Card informativo superior
+# Card Informativo de Resumo no Topo
 st.markdown(f"""
 <div class="banca-card">
     <span style="color: #6b7280; font-size: 14px; font-weight: bold; text-transform: uppercase;">Resumo do Objetivo</span>
@@ -134,11 +132,14 @@ st.progress(min(max(ultimo_saldo / meta_final, 0.0), 1.0))
 
 tab1, tab2, tab3 = st.tabs(["📝 Registro", "📊 Tabela Geral", "📈 Evolução"])
 
-# --- TAB 1: REGISTROS ---
+# --- TAB 1: ABA DE REGISTROS ---
 with tab1:
     st.subheader("Novo Registro Diário")
-    lista_datas = st.session_state.tabela_memoria['Data'].tolist()
-    data_selecionada = st.selectbox("Escolha a Data para Registrar/Alterar:", lista_datas)
+    
+    # Aqui estava o erro de nome de variável, agora corrigido perfeitamente:
+    lista_datas_dropdown = st.session_state.tabela_memoria['Data'].tolist()
+    data_selecionada = st.selectbox("Escolha a Data para Registrar/Alterar:", lista_datas_dropdown)
+    
     valor_rendimento = st.number_input("Valor do Rendimento (R$):", min_value=0.0, value=0.0, step=1.0)
     
     if valor_rendimento < meta_diaria:
@@ -151,7 +152,7 @@ with tab1:
         st.session_state.tabela_memoria.at[idx_data, 'Rendimento'] = valor_rendimento
         st.session_state.tabela_memoria.at[idx_data, 'Preenchido'] = 'Sim'
         
-        # Envia a tabela atualizada de volta para o Google Sheets
+        # Envia de volta para a aba 'rendimentos'
         conn.update(worksheet="rendimentos", data=st.session_state.tabela_memoria)
         st.success("Dados salvos e sincronizados com sucesso no Google Sheets!")
         st.rerun()
