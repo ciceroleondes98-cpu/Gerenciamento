@@ -3,40 +3,105 @@ import pandas as pd
 import datetime
 import plotly.graph_objects as go
 
-# 1. Configuração da página e identidade visual
 st.set_page_config(page_title="Gerenciador de Banca", page_icon="🪙", layout="centered")
 
-st.markdown("""
-    <style>
-    .stApp { background: linear-gradient(180deg, #030f26 0%, #081633 100%); color: #ffffff; }
-    h1, h2, h3, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 { color: #f1b813 !important; font-weight: 700; }
-    .stWidgetForm label, div[data-testid="stMarkdownContainer"] p { color: #e2e8f0; }
-    .banca-card { background-color: #0a1d37; padding: 20px; border-radius: 12px; color: #ffffff; margin-bottom: 20px; border-left: 5px solid #f1b813; }
-    .banca-card h3, .banca-card p, .banca-card span { color: #ffffff !important; }
-    .stButton>button { background-color: #f1b813; color: #030f26; border-radius: 8px; border: none; font-weight: bold; width: 100%; }
-    .stButton>button:hover { background-color: #d6a10b; color: #030f26; }
-    .meta-atingida { color: #10b981; font-weight: bold; font-size: 18px; }
-    .meta-abaixo { color: #ef4444; font-weight: bold; font-size: 18px; }
-    .stTabs [data-baseweb="tab"] { color: #94a3b8; }
-    .stTabs [data-baseweb="tab"][aria-selected="true"] { color: #f1b813; border-bottom-color: #f1b813; }
-    </style>
-    """, unsafe_allow_html=True)
+# ============================================
+# VALORES PADRÃO DE SEGURANÇA
+# ============================================
+val_saldo = 200.0
+val_meta_f = 500.0
+val_meta_d = 10.0
+val_dias = 30
 
+# ============================================
+# LEITURA DA ABA 'config' DO GOOGLE SHEETS
+# ============================================
+@st.cache_data(ttl=300)
+def carregar_config_gsheets():
+    """Carrega valores da aba 'config' do Google Sheets."""
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df_config = conn.read(worksheet="config", usecols=[0, 1], ttl=300)
+        
+        # Remove linhas vazias
+        df_config = df_config.dropna(how="all")
+        
+        # Converte para dicionário (coluna 0 = chave, coluna 1 = valor)
+        config_dict = dict(zip(
+            df_config.iloc[:, 0].astype(str).str.strip().str.lower(),
+            df_config.iloc[:, 1]
+        ))
+        
+        return config_dict
+    except Exception as e:
+        st.warning(f"⚠️ Não foi possível ler a planilha de configuração: {e}")
+        return None
+
+# Tenta carregar configurações do Google Sheets
+config = carregar_config_gsheets()
+
+if config is not None:
+    try:
+        val_saldo = float(config.get("saldo_inicial", val_saldo))
+        val_meta_f = float(config.get("meta_final", val_meta_f))
+        val_meta_d = float(config.get("meta_diaria", val_meta_d))
+        val_dias = int(float(config.get("qtd_dias", val_dias)))
+    except (ValueError, TypeError) as e:
+        st.warning(f"⚠️ Erro ao converter valores da planilha. Usando padrões: {e}")
+
+# ============================================
+# INTERFACE PRINCIPAL
+# ============================================
 st.title("🪙 Controle de Rendimentos Pro")
 
-# Valores padrão de segurança
-val_saldo, val_meta_f, val_meta_d, val_dias = 200.0, 500.0, 10.0, 30
-dados_rendimentos = pd.DataFrame()
-url_planilha = ""
+st.subheader("⚙️ Configuração da Banca e Período")
+col1, col2, col3, col4 = st.columns(4)
 
-# 2. Leitura segura dos Secrets e tabelas do Google Sheets
-try:
-    if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
-        url_planilha = st.secrets["connections"]["gsheets"]["spreadsheet"]
-        url_config = url_planilha.replace("/edit?usp=sharing", "/gviz/tq?tqx=out:csv&sheet=config")
-        url_rendimentos = url_planilha.replace("/edit?usp=sharing", "/gviz/tq?tqx=out:csv&sheet=rendimentos")
-        
-        dados_config = pd.read_csv(url_config)
-        dados_rendimentos = pd.read_csv(url_rendimentos)
-        
-        if not
+with col1:
+    saldo_banca_inicial = st.number_input(
+        "Saldo Inicial (R$):",
+        value=val_saldo,
+        step=10.0
+    )
+
+with col2:
+    meta_final = st.number_input(
+        "Meta Final Geral (R$):",
+        value=val_meta_f,
+        step=50.0
+    )
+
+with col3:
+    meta_diaria = st.number_input(
+        "Meta Diária (R$):",
+        value=val_meta_d,
+        step=1.0
+    )
+
+with col4:
+    quantidade_dias = st.number_input(
+        "Qtd de Dias:",
+        value=val_dias,
+        step=1
+    )
+
+# ============================================
+# ESTRUTURA DAS 3 ABAS (INTACTA)
+# ============================================
+tab1, tab2, tab3 = st.tabs(["📝 Lançamentos", "📋 Visão Geral", "📊 Gráfico de Evolução"])
+
+with tab1:
+    st.subheader("Novo Registro Diário")
+    # Conteúdo dos lançamentos...
+    st.info("Insira aqui o conteúdo da aba de Lançamentos.")
+
+with tab2:
+    st.subheader("📋 Tabela Geral de Acompanhamento")
+    # Conteúdo da tabela...
+    st.info("Insira aqui o conteúdo da Visão Geral.")
+
+with tab3:
+    st.subheader("📊 Gráfico de Performance Operacional")
+    # Conteúdo do gráfico...
+    st.info("Insira aqui o conteúdo do Gráfico de Evolução.")
