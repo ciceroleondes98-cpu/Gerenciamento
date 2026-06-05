@@ -2,11 +2,12 @@ import streamlit as st
 import pandas as pd
 import datetime
 import plotly.graph_objects as go
+from streamlit_gsheets import GSheetsConnection
 
 # 1. Configuração da página
 st.set_page_config(page_title="Gerenciador de Banca Pro", page_icon="💰", layout="centered")
 
-# Estilização visual (Fundo escuro, cards brancos)
+# Estilização visual premium (Fundo escuro, cards brancos)
 st.markdown("""
     <style>
     .stApp { background: linear-gradient(180deg, #1f2937 0%, #111827 100%); color: #ffffff; }
@@ -14,171 +15,148 @@ st.markdown("""
     .banca-card { background-color: #ffffff; padding: 20px; border-radius: 12px; color: #111827; margin-bottom: 20px; }
     .banca-card h3, .banca-card p, .banca-card span { color: #111827 !important; }
     .stButton>button { background-color: #10b981; color: white; border-radius: 8px; font-weight: bold; width: 100%; }
+    .stButton>button:hover { background-color: #059669; color: white; }
     .meta-atingida { color: #10b981; font-weight: bold; font-size: 18px; }
     .meta-abaixo { color: #f87171; font-weight: bold; font-size: 18px; }
+    .stTabs [data-baseweb="tab"] { color: #9ca3af; }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] { color: #10b981; border-bottom-color: #10b981; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("💰 Controle de Rendimentos Pro")
+st.title("💰 Controle de Rendimentos Conectado")
 
-# --- CONEXÃO INTELIGENTE COM O GOOGLE SHEETS ---
-st.subheader("🔗 Vinculação do Banco de Dados")
-url_planilha = st.text_input("Cole o link de compartilhamento da sua Planilha Google:", type="password")
-
-if not url_planilha:
-    st.info("Aguardando o link da planilha para ativar o salvamento automático...")
-    st.stop()
-
-# Trata a URL para o formato de leitura do pandas
+# Inicializando a conexão oficial com o Google Sheets utilizando os Secrets
 try:
-    base_url = url_planilha.split("/edit")[0]
-    url_config = f"{base_url}/gviz/tq?tqx=out:csv&sheet=config"
-    url_rendimentos = f"{base_url}/gviz/tq?tqx=out:csv&sheet=rendimentos"
+    conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # Tenta ler as configurações. Se estiver vazia, usa os valores padrão automaticamente
-    try:
-        df_conf = pd.read_csv(url_config)
-        if not df_conf.empty and 'saldo_inicial' in df_conf.columns:
-            val_saldo = float(df_conf['saldo_inicial'].iloc[0])
-            val_meta_f = float(df_conf['meta_final'].iloc[0])
-            val_meta_d = float(df_conf['meta_diaria'].iloc[0])
-            val_dias = int(df_conf['qtd_dias'].iloc[0])
-        else:
-            raise ValueError
-    except:
-        # Valores padrão caso a planilha esteja zerada
-        val_saldo, val_meta_f, val_meta_d, val_dias = 200.0, 500.0, 10.0, 30
-
-    # --- REFEITO AUTOMATICAMENTE ---
-    st.subheader("Configuração da Banca")
-    col1, col2, col3, col4 = st.columns(4)
+    # Lendo os dados direto da aba da sua planilha
+    df_sheets = conn.read(worksheet="🎯 Meta Diária", ttl=0) # ttl=0 garante que ele não use cache antigo e pegue o dado atualizado
     
-    with col1:
-        saldo_banca_inicial = st.number_input("Saldo Inicial (R$):", min_value=0.0, value=val_saldo, step=10.0)
-    with col2:
-        meta_final = st.number_input("Meta Final Geral (R$):", min_value=1.0, value=val_meta_f, step=50.0)
-    with col3:
-        meta_diaria = st.number_input("Meta Diária (R$):", min_value=0.0, value=val_meta_d, step=1.0)
-    with col4:
-        quantidade_dias = st.number_input("Qtd de Dias:", min_value=1, max_value=365, value=val_dias, step=1)
-
-    # Cria as datas automáticas baseadas na quantidade de dias informada
-    datas_fixas = [(datetime.date(2026, 6, 1) + datetime.timedelta(days=i)).strftime('%d/%m/%Y') for i in range(quantidade_dias)]
-
-    # Tenta ler a aba de rendimentos do Sheets, se estiver limpa, cria a estrutura na memória
-    if 'tabela_memoria' not in st.session_state:
-        try:
-            df_rend_sheet = pd.read_csv(url_rendimentos)
-            if not df_rend_sheet.empty and 'Data' in df_rend_sheet.columns:
-                # Sincroniza o que já tem na planilha com o app
-                st.session_state.tabela_memoria = df_rend_sheet
-            else:
-                raise ValueError
-        except:
-            # Estrutura inicial automática se a planilha estiver limpa
-            st.session_state.tabela_memoria = pd.DataFrame({
-                'Data': datas_fixas,
-                '✏️ Rendimento (R$)': [0.0] * quantidade_dias,
-                'Preenchido': [False] * quantidade_dias
-            })
-
-    # Força ajuste caso o usuário mude a quantidade de dias no botão
-    if len(st.session_state.tabela_memoria) != quantidade_dias:
-        st.session_state.tabela_memoria = pd.DataFrame({
-            'Data': datas_fixas,
-            '✏️ Rendimento (R$)': [0.0] * quantidade_dias,
-            'Preenchido': [False] * quantidade_dias
-        })
-
-    # Função que faz o cálculo em cascata dos saldos
-    def calcular_tabela_dinamica():
-        df = st.session_state.tabela_memoria.copy()
-        saldos_iniciais, metas_do_dia, saldos_finais, progressos = [], [], [], []
-        saldo_atual = saldo_banca_inicial
-        
-        for idx, row in df.iterrows():
-            saldos_iniciais.append(saldo_atual)
-            meta_dia_calculada = saldo_banca_inicial + (meta_diaria * (idx + 1))
-            metas_do_dia.append(meta_dia_calculada)
-            
-            rendimento = float(row['✏️ Rendimento (R$)'])
-            saldo_final_dia = saldo_atual + rendimento
-            saldos_finais.append(saldo_final_dia)
-            
-            prog_porc = min((saldo_final_dia / meta_final) * 100, 100.0)
-            progressos.append(f"{prog_porc:.1f}%")
-            saldo_atual = saldo_final_dia
-            
-        df['Saldo Inicial (R$)'] = saldos_iniciais
-        df['🎯 Meta do Dia (R$)'] = metas_do_dia
-        df['Saldo Final (R$)'] = saldos_finais
-        df['Progresso (%)'] = progressos
-        return df
-
-    df_calculado = calcular_tabela_dinamica()
-    df_preenchidos = df_calculado[df_calculado['Preenchido'] == True]
-    ultimo_saldo = df_preenchidos['Saldo Final (R$)'].iloc[-1] if not df_preenchidos.empty else saldo_banca_inicial
-    progresso_porcentagem = min((ultimo_saldo / meta_final) * 100, 100.0)
-
-    # Card informativo superior
-    st.markdown(f"""
-    <div class="banca-card">
-        <span style="color: #6b7280; font-size: 14px; font-weight: bold; text-transform: uppercase;">Resumo do Objetivo</span>
-        <h3 style="margin: 5px 0 10px 0;">🎯 Meta Diária Acumulativa: R$ {meta_diaria:,.2f}</h3>
-        <p style="font-size: 16px; margin: 0;">
-            <b>Saldo Atual:</b> R$ {ultimo_saldo:,.2f} ➔ <b>Alvo Final:</b> R$ {meta_final:,.2f} | <b>Dias:</b> {quantidade_dias}
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    # Limpando possíveis linhas vazias da planilha original
+    df_sheets = df_sheets.dropna(subset=['Dia']).reset_index(drop=True)
     
-    st.progress(min(ultimo_saldo / meta_final, 1.0))
-
-    tab1, tab2, tab3 = st.tabs(["📝 Lançamentos", "📊 Tabela Geral", "📈 Gráfico"])
-
-    with tab1:
-        st.subheader("Registrar Rendimento")
-        data_selecionada = st.selectbox("Escolha o Dia:", st.session_state.tabela_memoria['Data'].tolist())
-        valor_rendimento = st.number_input("Rendimento do Dia (R$):", min_value=0.0, value=0.0, step=1.0)
-        
-        if valor_rendimento < meta_diaria:
-            st.markdown(f"<p class='meta-abaixo'>⚠️ Faltam R$ {(meta_diaria - valor_rendimento):,.2f} para a meta individual deste dia.</p>", unsafe_allow_html=True)
-        else:
-            st.markdown("<p class='meta-atingida'>✅ Meta do dia batida!</p>", unsafe_allow_html=True)
-            
-        if st.button("Confirmar e Salvar Dados"):
-            idx_data = st.session_state.tabela_memoria[st.session_state.tabela_memoria['Data'] == data_selecionada].index[0]
-            st.session_state.tabela_memoria.at[idx_data, '✏️ Rendimento (R$)'] = valor_rendimento
-            st.session_state.tabela_memoria.at[idx_data, 'Preenchido'] = True
-            st.success("Registrado! Os dados estão salvos na sessão do seu navegador.")
-            st.rerun()
-
-        st.markdown("---")
-        st.subheader("Histórico Recente")
-        if not df_preenchidos.empty:
-            for idx, row in df_preenchidos.iterrows():
-                c1, c2, c3 = st.columns([3, 3, 1])
-                with c1: st.markdown(f"📅 **{row['Data']}**")
-                with c2: st.markdown(f"💰 Ganho: **R$ {row['✏️ Rendimento (R$)']:,.2f}**")
-                with c3:
-                    if st.button("🗑️", key=f"del_{idx}"):
-                        st.session_state.tabela_memoria.at[idx, '✏️ Rendimento (R$)'] = 0.0
-                        st.session_state.tabela_memoria.at[idx, 'Preenchido'] = False
-                        st.rerun()
-
-    with tab2:
-        st.subheader("Movimentações Completas")
-        st.dataframe(df_calculado[['Data', 'Saldo Inicial (R$)', '✏️ Rendimento (R$)', '🎯 Meta do Dia (R$)', 'Saldo Final (R$)', 'Progresso (%)']], hide_index=True, use_container_width=True)
-
-    with tab3:
-        st.subheader("Evolução Visual")
-        if not df_preenchidos.empty:
-            fig = go.Figure()
-            fig.add_trace(go.Bar(x=df_preenchidos['Data'], y=df_preenchidos['Saldo Final (R$)'], name='Seu Saldo', marker_color='#10b981'))
-            fig.add_trace(go.Bar(x=df_preenchidos['Data'], y=df_preenchidos['🎯 Meta do Dia (R$)'], name='Meta Esperada', marker_color='#3b82f6'))
-            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'), barmode='group')
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Insira lançamentos para gerar o gráfico.")
+    # Tratamento e conversão de dados de texto para valores numéricos utilizáveis
+    df_sheets['✏️ Rendimento (R$)'] = pd.to_numeric(df_sheets['✏️ Rendimento (R$)'].astype(str).str.replace('R$', '').str.replace('.', '').str.replace(',', '.').str.strip(), errors='coerce').fillna(0.0)
 
 except Exception as e:
-    st.error("Link inválido ou permissão pendente. Lembre-se de colocar 'Qualquer pessoa com o link' como Leitor no botão Compartilhar do Sheets.")
+    st.error("Erro ao conectar com a sua planilha. Verifique se configurou corretamente os 'Secrets' no painel do Streamlit.")
+    st.stop()
+
+# --- BUSCA PARÂMETROS AUTOMÁTICOS DA SUA PLANILHA ---
+# Lendo a célula de Saldo Inicial e Meta Final direto do cabeçalho existente da sua tabela
+try:
+    saldo_banca_inicial = float(df_sheets.loc[0, 'Saldo Inicial (R$)']) if 'Saldo Inicial (R$)' in df_sheets.columns else 200.0
+    meta_final = 500.0 # Valor padrão conforme cabeçalho
+except:
+    saldo_banca_inicial, meta_final = 200.0, 500.0
+
+meta_diaria = 10.0
+
+# --- CÁLCULO DA CASCATA EM TEMPO REAL ---
+def processar_cascata_financeira(df):
+    df_calculado = df.copy()
+    saldos_iniciais = []
+    metas_do_dia = []
+    saldos_finais = []
+    progressos = []
+    meta_atingida = []
+    
+    saldo_atual = saldo_banca_inicial
+    
+    for idx, row in df_calculado.iterrows():
+        saldos_iniciais.append(saldo_atual)
+        meta_dia_calculada = saldo_banca_inicial + (meta_diaria * (idx + 1))
+        metas_do_dia.append(meta_dia_calculada)
+        
+        rendimento = float(row['✏️ Rendimento (R$)'])
+        saldo_final_dia = saldo_atual + rendimento
+        saldos_finais.append(saldo_final_dia)
+        
+        prog_porc = (saldo_final_dia / meta_final) * 100
+        progressos.append(f"{prog_porc:.1f}%")
+        meta_atingida.append("✅ SIM" if rendimento >= meta_diaria else "❌ NÃO")
+        
+        saldo_atual = saldo_final_dia
+        
+    df_calculado['Saldo Inicial (R$)'] = saldos_iniciais
+    df_calculado['🎯 Meta do Dia (R$)'] = metas_do_dia
+    df_calculado['Saldo Final (R$)'] = saldos_finais
+    df_calculado['Progresso (%)'] = progressos
+    df_calculado['Meta Atingida?'] = meta_atingida
+    return df_calculado
+
+df_final = processar_cascata_financeira(df_sheets)
+
+# Pegando os dados consolidados atuais para o Card do topo
+ultimo_rendimento_val = df_final[df_final['✏️ Rendimento (R$)'] > 0]
+ultimo_saldo = df_final['Saldo Final (R$)'].iloc[len(ultimo_rendimento_val)-1] if not ultimo_rendimento_val.empty else saldo_banca_inicial
+progresso_porcentagem = min((ultimo_saldo / meta_final) * 100, 100.0)
+
+# Card informativo
+st.markdown(f"""
+<div class="banca-card">
+    <span style="color: #6b7280; font-size: 14px; font-weight: bold; text-transform: uppercase;">Resumo em Tempo Real (Planilha Ativa)</span>
+    <h3 style="margin: 5px 0 10px 0;">🎯 Meta Diária: R$ {meta_diaria:,.2f}</h3>
+    <p style="font-size: 16px; margin: 0;">
+        <b>Saldo Atual Conectado:</b> R$ {ultimo_saldo:,.2f} ➔ <b>Alvo Final:</b> R$ {meta_final:,.2f}
+    </p>
+</div>
+""", unsafe_allow_html=True)
+st.progress(min(ultimo_saldo / meta_final, 1.0))
+
+tab1, tab2, tab3 = st.tabs(["📝 Lançamentos", "📊 Tabela Integrada", "📈 Gráfico de Evolução"])
+
+# --- ABA 1: LANÇAMENTOS (ESCREVE NA PLANILHA) ---
+with tab1:
+    st.subheader("Registrar Rendimento Direto no Google Sheets")
+    
+    # Puxa a lista exata de dias/datas que você tem listadas na coluna A da planilha
+    lista_dias = df_final['Dia'].astype(str).tolist()
+    dia_selecionado = st.selectbox("Selecione o Dia para Atualizar:", lista_dias)
+    
+    valor_rendimento = st.number_input("Digite o Rendimento deste dia (R$):", min_value=0.0, step=1.0)
+    
+    if st.button("🚀 Confirmar e Salvar na Planilha"):
+        # Encontra o índice correspondente ao dia na tabela
+        idx_planilha = df_sheets[df_sheets['Dia'].astype(str) == dia_selecionado].index[0]
+        
+        # Altera o valor na tabela local
+        df_sheets.at[idx_planilha, '✏️ Rendimento (R$)'] = valor_rendimento
+        
+        # MÁGICA: Atualiza os dados de volta para a sua Planilha Google Real!
+        conn.update(worksheet="🎯 Meta Diária", data=df_sheets)
+        
+        st.success(f"Planilha Google Atualizada com Sucesso para o dia {dia_selecionado}!")
+        st.rerun()
+
+    st.markdown("---")
+    st.subheader("Histórico Lançado na Planilha")
+    df_mostra_historico = df_final[df_final['✏️ Rendimento (R$)'] > 0]
+    if not df_mostra_historico.empty:
+        for idx, row in df_mostra_historico.iterrows():
+            c1, c2, c3 = st.columns([2, 3, 1])
+            with c1: st.markdown(f"📅 **Dia {row['Dia']}**")
+            with c2: st.markdown(f"💰 Rendimento: **R$ {row['✏️ Rendimento (R$)']:,.2f}**")
+            with c3:
+                if st.button("🗑️", key=f"del_{idx}"):
+                    df_sheets.at[idx, '✏️ Rendimento (R$)'] = 0.0
+                    conn.update(worksheet="🎯 Meta Diária", data=df_sheets)
+                    st.rerun()
+
+# --- ABA 2: TABELA GERAL ---
+with tab2:
+    st.subheader("Dados Sincronizados com o Google Sheets")
+    colunas_exibir = ['Dia', 'Saldo Inicial (R$)', '✏️ Rendimento (R$)', '🎯 Meta do Dia (R$)', 'Saldo Final (R$)', 'Progresso (%)', 'Meta Atingida?']
+    st.dataframe(df_final[colunas_exibir], hide_index=True, use_container_width=True)
+
+# --- ABA 3: EVOLUÇÃO ---
+with tab3:
+    st.subheader("Gráfico Progressivo de Evolução")
+    if not df_mostra_historico.empty:
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=df_mostra_historico['Dia'], y=df_mostra_historico['Saldo Final (R$)'], name='Seu Saldo Final', marker_color='#10b981'))
+        fig.add_trace(go.Bar(x=df_mostra_historico['Dia'], y=df_mostra_historico['🎯 Meta do Dia (R$)'], name='Meta Acumulada', marker_color='#3b82f6'))
+        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'), barmode='group')
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Preencha dados na aba de lançamentos para visualizar o gráfico.")
