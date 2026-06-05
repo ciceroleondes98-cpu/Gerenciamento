@@ -40,7 +40,10 @@ def carregar_dados_github():
     if response.status_code == 200:
         conteudo = response.json()
         dados_decodificados = base64.b64decode(conteudo["content"]).decode("utf-8")
-        return json.loads(dados_decodificados), conteudo["sha"]
+        try:
+            return json.loads(dados_decodificados), conteudo["sha"]
+        except:
+            return {}, conteudo["sha"]
     return None, None
 
 def salvar_dados_github(dados, sha=None):
@@ -62,7 +65,7 @@ if TOKEN and REPO:
     except:
         pass
 
-if dados_salvos:
+if dados_salvos and isinstance(dados_salvos, dict) and "saldo_inicial" in dados_salvos:
     val_saldo = dados_salvos.get("saldo_inicial", 250.0)
     val_meta_f = dados_salvos.get("meta_final", 650.0)
     val_meta_d = dados_salvos.get("meta_diaria", 12.0)
@@ -115,7 +118,7 @@ st.markdown(f"""
 <div class="banca-card">
     <span style="color: #94a3b8; font-size: 13px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">🚀 RESUMO DA OPERAÇÃO</span>
     <h3 style="margin: 8px 0 12px 0;">🎯 Meta Diária: R$ {meta_diaria:,.2f}</h3>
-    <p style="font-size: 16px; margin: 0; color: #f1b813;"><b>Saldo Actual:</b> R$ {ultimo_saldo:,.2f} ➔ <b>Alvo Final:</b> R$ {meta_final:,.2f} | <b>Período:</b> {quantidade_dias} dias</p>
+    <p style="font-size: 16px; margin: 0; color: #f1b813;"><b>Saldo Atual:</b> R$ {ultimo_saldo:,.2f} ➔ <b>Alvo Final:</b> R$ {meta_final:,.2f} | <b>Período:</b> {quantidade_dias} dias</p>
 </div>
 """, unsafe_allow_html=True)
 st.markdown(f"**Progresso Geral para o Alvo:** {progresso_porcentagem:.1f}%")
