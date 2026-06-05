@@ -65,20 +65,16 @@ df_rend_sheet = pd.DataFrame()
 # --- CONEXÃO AUTOMÁTICA VIA GSHEETS ---
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
-    
-    # Lendo a aba de configurações
     df_conf_sheet = conn.read(worksheet="config", ttl=0)
     if not df_conf_sheet.empty and 'saldo_inicial' in df_conf_sheet.columns:
         val_saldo = float(df_conf_sheet['saldo_inicial'].iloc[0])
         val_meta_f = float(df_conf_sheet['meta_final'].iloc[0])
         val_meta_d = float(df_conf_sheet['meta_diaria'].iloc[0])
         val_dias = int(df_conf_sheet['qtd_dias'].iloc[0])
-    
-    # Lendo a aba de rendimentos
     df_rend_sheet = conn.read(worksheet="rendimentos", ttl=0)
     st.success("📊 Banco de dados sincronizado permanentemente com o Google Sheets!")
 except Exception as e:
-    st.error("⚠️ Conectando ao banco de dados... Se este aviso persistir, verifique as configurações.")
+    st.error("⚠️ Sincronizando banco de dados...")
 
 # Interface de Configurações
 st.subheader("⚙️ Configuração da Banca e Período")
@@ -100,7 +96,7 @@ if st.button("💾 Salvar Parâmetros no Google Sheets"):
     })
     try:
         conn.update(worksheet="config", data=df_salvar_conf)
-        st.success("✅ Configurações salvas na planilha!")
+        st.success("✅ Configurações salvas!")
         st.rerun()
     except:
         st.error("Erro ao salvar parâmetros.")
@@ -124,7 +120,6 @@ def calcular_tabela_dinamica():
     df = st.session_state.tabela_memoria.copy()
     saldos_iniciais, metas_do_dia, saldos_finais, progressos = [], [], [], []
     saldo_atual = saldo_banca_inicial
-    
     for idx, row in df.iterrows():
         saldos_iniciais.append(saldo_atual)
         meta_dia_calculada = saldo_banca_inicial + (meta_diaria * (idx + 1))
@@ -135,7 +130,6 @@ def calcular_tabela_dinamica():
         prog_porc = min((saldo_final_dia / meta_final) * 100, 100.0)
         progressos.append(f"{prog_porc:.1f}%")
         saldo_atual = saldo_final_dia
-        
     df['Saldo Inicial (R$)'] = saldos_iniciais
     df['🏆 Meta do Dia (R$)'] = metas_do_dia
     df['Saldo Final (R$)'] = saldos_finais
@@ -166,23 +160,31 @@ with tab1:
     st.subheader("Novo Registro Diário")
     data_selecionada = st.selectbox("Escolha a Data:", df_calculado['Data'].tolist())
     valor_rendimento = st.number_input("Valor do Rendimento (R$):", min_value=0.0, value=0.0, step=1.0)
-    
     if valor_rendimento < meta_diaria:
-        st.markdown(f"<p class='meta-abaixo'>⚠️ Abaixo da meta!</p>", unsafe_allow_html=True)
+        st.markdown("<p class='meta-abaixo'>⚠️ Abaixo da meta!</p>", unsafe_allow_html=True)
     else:
         st.markdown("<p class='meta-atingida'>✅ Meta atingida!</p>", unsafe_allow_html=True)
-        
     if st.button("Confirmar e Gravar no Sheets"):
         idx_data = st.session_state.tabela_memoria[st.session_state.tabela_memoria['Data'] == data_selecionada].index[0]
         st.session_state.tabela_memoria.at[idx_data, '📈 Rendimento (R$)'] = valor_rendimento
         st.session_state.tabela_memoria.at[idx_data, 'Preenchido'] = True
-        
         try:
             conn.update(worksheet="rendimentos", data=st.session_state.tabela_memoria)
-            st.success("🔥 Sincronizado e salvo permanentemente no Google Sheets!")
+            st.success("🔥 Salvo com sucesso no Google Sheets!")
             st.rerun()
         except Exception as e:
             st.error("Erro ao salvar dados.")
 
-    st.markdown("---")
-    st.
+with tab2:
+    st.subheader("📋 Tabela Geral")
+    st.dataframe(df_calculado[['Data', 'Saldo Inicial (R$)', '📈 Rendimento (R$)', '🏆 Meta do Dia (R$)', 'Saldo Final (R$)', 'Progresso (%)']], hide_index=True, use_container_width=True)
+
+with tab3:
+    st.subheader("📊 Gráfico de Performance")
+    if not df_preenchidos.empty:
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=df_preenchidos['Data'], y=df_preenchidos['Saldo Final (R$)'], name='Saldo Atual', marker_color='#f1b813'))
+        fig.add_trace(go.Bar(x=df_preenchidos['Data'], y=df_preenchidos['🏆 Meta do Dia (R$)'], name='Meta Esperada', marker_color='#3b82f6'))
+        fig.add_trace(go.Scatter(x=df_preenchidos['Data'], y=[meta_final]*len(df_preenchidos), mode='lines', name='Alvo Final', line=dict(color='#ef4444', width=3, dash='dash')))
+        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'), barmode='group')
+        st.plotly_chart(fig, use_container_width=True)
