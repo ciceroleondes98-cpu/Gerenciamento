@@ -6,20 +6,64 @@ import plotly.graph_objects as go
 # 1. Configuração da página para um visual limpo e moderno
 st.set_page_config(page_title="Gerenciador de Banca", page_icon="💰", layout="centered")
 
-# 2. Estilização com a paleta de cores (Gradiente escuro, textos esmeralda e cards brancos)
+# 2. Estilização PREMIUM com as cores exatas do site enviado (Fundo Dark, Cards Cinza e Detalhes em Verde Esmeralda)
 st.markdown("""
     <style>
-    .stApp { background: linear-gradient(180deg, #1f2937 0%, #111827 100%); color: #ffffff; }
-    h1, h2, h3, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 { color: #10b981 !important; font-weight: 700; }
-    .stWidgetForm label, div[data-testid="stMarkdownContainer"] p { color: #e5e7eb; }
-    .banca-card { background-color: #ffffff; padding: 20px; border-radius: 12px; color: #111827; margin-bottom: 20px; }
-    .banca-card h3, .banca-card p, .banca-card span { color: #111827 !important; }
-    .stButton>button { background-color: #10b981; color: white; border-radius: 8px; border: none; font-weight: bold; }
-    .stButton>button:hover { background-color: #059669; color: white; }
-    .meta-atingida { color: #10b981; font-weight: bold; font-size: 18px; }
-    .meta-abaixo { color: #f87171; font-weight: bold; font-size: 18px; }
-    .stTabs [data-baseweb="tab"] { color: #9ca3af; }
-    .stTabs [data-baseweb="tab"][aria-selected="true"] { color: #10b981; border-bottom-color: #10b981; }
+    /* Fundo total do aplicativo (Escuro) */
+    .stApp { 
+        background-color: #0b0f19; 
+        color: #ffffff; 
+    }
+    
+    /* Títulos e Subtítulos em Verde Esmeralda Vivo */
+    h1, h2, h3, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 { 
+        color: #10b981 !important; 
+        font-weight: 700; 
+    }
+    
+    /* Textos secundários e labels dos inputs */
+    .stWidgetForm label, div[data-testid="stMarkdownContainer"] p { 
+        color: #9ca3af; 
+    }
+    
+    /* Estilização dos Cards (Cinza Escuro Arredondado com borda sutil igual ao site) */
+    .banca-card { 
+        background-color: #111827; 
+        padding: 20px; 
+        border-radius: 12px; 
+        border: 1px solid #1f2937;
+        margin-bottom: 20px; 
+    }
+    .banca-card h3 { color: #10b981 !important; margin-top: 0; }
+    .banca-card p, .banca-card span { color: #e5e7eb !important; }
+    
+    /* Botão Principal em Verde Esmeralda */
+    .stButton>button { 
+        background-color: #10b981; 
+        color: #ffffff; 
+        border-radius: 8px; 
+        border: none; 
+        font-weight: bold; 
+        width: 100%;
+        padding: 10px;
+    }
+    .stButton>button:hover { 
+        background-color: #059669; 
+        color: #ffffff; 
+    }
+    
+    /* Feedbacks de Metas */
+    .meta-atingida { color: #10b981; font-weight: bold; font-size: 16px; }
+    .meta-abaixo { color: #ef4444; font-weight: bold; font-size: 16px; }
+    
+    /* Abas customizadas */
+    .stTabs [data-baseweb="tab"] { 
+        color: #9ca3af; 
+    }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] { 
+        color: #10b981; 
+        border-bottom-color: #10b981; 
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -51,7 +95,7 @@ try:
         val_saldo, val_meta_f, val_meta_d, val_dias = 200.0, 500.0, 10.0, 30
 
     # Interface de Configurações
-    st.subheader("Configuração da Banca e Período")
+    st.subheader("⚙️ Configuração da Banca e Período")
     col_banca1, col_banca2, col_banca3, col_banca4 = st.columns(4)
 
     with col_banca1:
@@ -69,21 +113,19 @@ try:
             'saldo_inicial': [saldo_banca_inicial], 'meta_final': [meta_final],
             'meta_diaria': [meta_diaria], 'qtd_dias': [quantidade_dias]
         })
-        # Como o Streamlit em nuvem não escreve direto no Sheets sem chaves complexas,
-        # orientamos a salvar de forma visual ou usando st.experimental_connection se preferir futuramente.
-        st.success("Parâmetros prontos! Nota: Para salvar as alterações, garanta que os dados estejam preenchidos.")
+        st.success("🎯 Parâmetros aplicados com sucesso na tela atual!")
 
-    # 4. CARREGAR HISTÓRICO DE RENDIMENTOS
+    # 4. CARREGAR HISTÓRICO DE RENDIMENTOS NA MEMÓRIA DA SESSÃO (Evita apagar ao mexer no app)
     datas_fixas = [(datetime.date(2026, 6, 1) + datetime.timedelta(days=i)).strftime('%d/%m/%Y') for i in range(quantidade_dias)]
     
-    if 'tabela_memoria' not in st.session_state:
+    if 'tabela_memoria' not in st.session_state or len(st.session_state.tabela_memoria) != quantidade_dias:
         st.session_state.tabela_memoria = pd.DataFrame({
             'Data': datas_fixas,
             '✏️ Rendimento (R$)': [0.0] * quantidade_dias,
             'Preenchido': [False] * quantidade_dias
         })
 
-    # Função interna para cascata
+    # Função interna para gerar a cascata matemática de juros e progressões
     def calcular_tabela_dinamica():
         df = st.session_state.tabela_memoria.copy()
         saldos_iniciais, metas_do_dia, saldos_finais, progressos = [], [], [], []
@@ -111,24 +153,26 @@ try:
     ultimo_saldo = df_preenchidos['Saldo Final (R$)'].iloc[-1] if not df_preenchidos.empty else saldo_banca_inicial
     progresso_porcentagem = min((ultimo_saldo / meta_final) * 100, 100.0)
 
-    # Card informativo
+    # Card informativo idêntico ao padrão premium escuro do site enviado
     st.markdown(f"""
     <div class="banca-card">
-        <span style="color: #6b7280; font-size: 14px; font-weight: bold; text-transform: uppercase;">Resumo do Objetivo</span>
-        <h3 style="margin: 5px 0 10px 0;">🎯 Meta Diária Definida: R$ {meta_diaria:,.2f}</h3>
-        <p style="font-size: 16px; margin: 0;">
-            <b>Saldo Atualizado:</b> R$ {ultimo_saldo:,.2f} ➔ <b>Alvo Final:</b> R$ {meta_final:,.2f} | <b>Período:</b> {quantidade_dias} dias
+        <span>📋 RESUMO DO OBJETIVO</span>
+        <h3 style="margin: 10px 0;">🎯 Meta Diária Definida: R$ {meta_diaria:,.2f}</h3>
+        <p style="font-size: 15px; margin: 0;">
+            <b>Saldo Atualizado:</b> R$ {ultimo_saldo:,.2f} ➔ <b>Alvo Final:</b> R$ {meta_final:,.2f} | <b>Período total:</b> {quantidade_dias} dias
         </p>
     </div>
     """, unsafe_allow_html=True)
+    
     st.markdown(f"**Progresso Geral:** {progresso_porcentagem:.1f}%")
     st.progress(min(ultimo_saldo / meta_final, 1.0))
 
     tab1, tab2, tab3 = st.tabs(["📝 Registro", "📊 Tabela Geral", "📈 Evolução"])
 
     with tab1:
-        st.subheader("Novo Registro Diário")
-        data_selecionada = st.selectbox("Escolha a Data para Registrar/Alterar:", datas_lista := st.session_state.tabela_memoria['Data'].tolist())
+        st.subheader("🎯 Novo Registro Diário")
+        datas_lista = st.session_state.tabela_memoria['Data'].tolist()
+        data_selecionada = st.selectbox("Escolha a Data para Registrar/Alterar:", datas_lista)
         valor_rendimento = st.number_input("Valor do Rendimento (R$):", min_value=0.0, value=0.0, step=1.0)
         
         if valor_rendimento < meta_diaria:
@@ -140,11 +184,11 @@ try:
             idx_data = st.session_state.tabela_memoria[st.session_state.tabela_memoria['Data'] == data_selecionada].index[0]
             st.session_state.tabela_memoria.at[idx_data, '✏️ Rendimento (R$)'] = valor_rendimento
             st.session_state.tabela_memoria.at[idx_data, 'Preenchido'] = True
-            st.success("Gravado localmente! Dica: Para integração automática total escreva na planilha os valores.")
+            st.success("✅ Registro gravado na memória do aplicativo!")
             st.rerun()
 
         st.markdown("---")
-        st.subheader("Histórico de Alterações")
+        st.subheader("🗂️ Histórico de Alterações")
         if not df_preenchidos.empty:
             for idx, row in df_preenchidos.iterrows():
                 col_hist1, col_hist2, col_hist3 = st.columns([3, 3, 1])
@@ -157,18 +201,20 @@ try:
                         st.rerun()
 
     with tab2:
-        st.subheader("Tabela Geral")
+        st.subheader("📊 Tabela Geral de Evolução")
         st.dataframe(df_calculado[['Data', 'Saldo Inicial (R$)', '✏️ Rendimento (R$)', '🎯 Meta do Dia (R$)', 'Saldo Final (R$)', 'Progresso (%)']], hide_index=True, use_container_width=True)
 
     with tab3:
-        st.subheader("Gráfico de Evolução")
+        st.subheader("📈 Gráfico de Evolução Dinâmica")
         if not df_preenchidos.empty:
             fig = go.Figure()
             fig.add_trace(go.Bar(x=df_preenchidos['Data'], y=df_preenchidos['Saldo Final (R$)'], name='Saldo Final', marker_color='#10b981'))
             fig.add_trace(go.Bar(x=df_preenchidos['Data'], y=df_preenchidos['🎯 Meta do Dia (R$)'], name='Meta do Dia', marker_color='#3b82f6'))
-            fig.add_trace(go.Scatter(x=df_preenchidos['Data'], y=[meta_final]*len(df_preenchidos), mode='lines', name='Meta Final', line=dict(color='#f87171', width=3, dash='dash')))
+            fig.add_trace(go.Scatter(x=df_preenchidos['Data'], y=[meta_final]*len(df_preenchidos), mode='lines', name='Meta Final', line=dict(color='#ef4444', width=3, dash='dash')))
             fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'), barmode='group')
             st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Insira registros na aba de lançamentos para habilitar o gráfico.")
 
 except Exception as e:
-    st.error("Erro ao ler dados da planilha. Certifique-se de que o link está correto e que as abas 'config' e 'rendimentos' existem.")
+    st.error("Erro ao processar as informações. Certifique-se de que o link está preenchido corretamente.")
