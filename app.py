@@ -58,24 +58,27 @@ st.markdown("""
 
 st.title("🪙 Controle de Rendimentos Pro")
 
+# Valores padrão de segurança
+val_saldo, val_meta_f, val_meta_d, val_dias = 200.0, 500.0, 10.0, 30
+df_rend_sheet = pd.DataFrame()
+
 # --- CONEXÃO AUTOMÁTICA VIA GSHEETS ---
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
     
     # Lendo a aba de configurações
     df_conf_sheet = conn.read(worksheet="config", ttl=0)
-    val_saldo = float(df_conf_sheet['saldo_inicial'].iloc[0])
-    val_meta_f = float(df_conf_sheet['meta_final'].iloc[0])
-    val_meta_d = float(df_conf_sheet['meta_diaria'].iloc[0])
-    val_dias = int(df_conf_sheet['qtd_dias'].iloc[0])
+    if not df_conf_sheet.empty and 'saldo_inicial' in df_conf_sheet.columns:
+        val_saldo = float(df_conf_sheet['saldo_inicial'].iloc[0])
+        val_meta_f = float(df_conf_sheet['meta_final'].iloc[0])
+        val_meta_d = float(df_conf_sheet['meta_diaria'].iloc[0])
+        val_dias = int(df_conf_sheet['qtd_dias'].iloc[0])
     
     # Lendo a aba de rendimentos
     df_rend_sheet = conn.read(worksheet="rendimentos", ttl=0)
     st.success("📊 Banco de dados sincronizado permanentemente com o Google Sheets!")
 except Exception as e:
-    val_saldo, val_meta_f, val_meta_d, val_dias = 200.0, 500.0, 10.0, 30
-    df_rend_sheet = pd.DataFrame(columns=['Data', '📈 Rendimento (R$)', 'Preenchido'])
-    st.error("⚠️ Erro de conexão. Verifique se o arquivo secrets.toml foi criado corretamente no GitHub com o link da sua planilha compartilhada como Editor.")
+    st.error("⚠️ Conectando ao banco de dados... Se este aviso persistir, verifique as configurações.")
 
 # Interface de Configurações
 st.subheader("⚙️ Configuração da Banca e Período")
@@ -100,12 +103,12 @@ if st.button("💾 Salvar Parâmetros no Google Sheets"):
         st.success("✅ Configurações salvas na planilha!")
         st.rerun()
     except:
-        st.error("Erro ao salvar parâmetros. Verifique as permissões da planilha.")
+        st.error("Erro ao salvar parâmetros.")
 
 # 4. HISTÓRICO DE RENDIMENTOS
 datas_fixas = [(datetime.date(2026, 6, 1) + datetime.timedelta(days=i)).strftime('%d/%m/%Y') for i in range(quantidade_dias)]
 
-if df_rend_sheet.empty or 'Data' not in df_rend_sheet.columns:
+if df_rend_sheet.empty or 'Data' not in df_rend_sheet.columns or len(df_rend_sheet) < 1:
     df_base = pd.DataFrame({
         'Data': datas_fixas,
         '📈 Rendimento (R$)': [0.0] * quantidade_dias,
@@ -114,7 +117,7 @@ if df_rend_sheet.empty or 'Data' not in df_rend_sheet.columns:
 else:
     df_base = df_rend_sheet.copy()
 
-if 'tabela_memoria' not in st.session_state or len(st.session_state.tabela_memoria) != quantidade_dias:
+if 'tabela_memoria' not in st.session_state:
     st.session_state.tabela_memoria = df_base
 
 def calcular_tabela_dinamica():
@@ -179,35 +182,7 @@ with tab1:
             st.success("🔥 Sincronizado e salvo permanentemente no Google Sheets!")
             st.rerun()
         except Exception as e:
-            st.error("Erro ao salvar. Verifique se a planilha está configurada como Editor.")
+            st.error("Erro ao salvar dados.")
 
     st.markdown("---")
-    st.subheader("⏱️ Histórico Recente")
-    if not df_preenchidos.empty:
-        for idx, row in df_preenchidos.iterrows():
-            col_hist1, col_hist2, col_hist3 = st.columns([3, 3, 1])
-            with col_hist1: st.markdown(f"📅 **{row['Data']}**")
-            with col_hist2: st.markdown(f"💰 Rendimento: <span style='color: #f1b813; font-weight: bold;'>R$ {float(row['📈 Rendimento (R$)']):,.2f}</span>", unsafe_allow_html=True)
-            with col_hist3:
-                if st.button("🗑️", key=f"del_{idx}"):
-                    st.session_state.tabela_memoria.at[idx, '📈 Rendimento (R$)'] = 0.0
-                    st.session_state.tabela_memoria.at[idx, 'Preenchido'] = False
-                    try:
-                        conn.update(worksheet="rendimentos", data=st.session_state.tabela_memoria)
-                        st.rerun()
-                    except:
-                        pass
-
-with tab2:
-    st.subheader("📋 Tabela Geral")
-    st.dataframe(df_calculado[['Data', 'Saldo Inicial (R$)', '📈 Rendimento (R$)', '🏆 Meta do Dia (R$)', 'Saldo Final (R$)', 'Progresso (%)']], hide_index=True, use_container_width=True)
-
-with tab3:
-    st.subheader("📊 Gráfico de Performance")
-    if not df_preenchidos.empty:
-        fig = go.Figure()
-        fig.add_trace(go.Bar(x=df_preenchidos['Data'], y=df_preenchidos['Saldo Final (R$)'], name='Saldo Atual', marker_color='#f1b813'))
-        fig.add_trace(go.Bar(x=df_preenchidos['Data'], y=df_preenchidos['🏆 Meta do Dia (R$)'], name='Meta Esperada', marker_color='#3b82f6'))
-        fig.add_trace(go.Scatter(x=df_preenchidos['Data'], y=[meta_final]*len(df_preenchidos), mode='lines', name='Alvo Final', line=dict(color='#ef4444', width=3, dash='dash')))
-        fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'), barmode='group')
-        st.plotly_chart(fig, use_container_width=True)
+    st.
