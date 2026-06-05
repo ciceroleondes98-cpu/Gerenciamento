@@ -7,7 +7,7 @@ from streamlit_gsheets import GSheetsConnection
 # 1. Configuração da página
 st.set_page_config(page_title="Gerenciador de Banca Pro", page_icon="💰", layout="centered")
 
-# Estilização visual premium (Fundo escuro, cards brancos)
+# Estilização visual premium
 st.markdown("""
     <style>
     .stApp { background: linear-gradient(180deg, #1f2937 0%, #111827 100%); color: #ffffff; }
@@ -29,10 +29,20 @@ st.title("💰 Controle de Rendimentos Conectado")
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # Lendo os dados brutos primeiro
+    # Lendo os dados brutos da planilha em tempo real
     df_raw = conn.read(worksheet="🎯 Meta Diária", ttl=0)
     
-    # CORREÇÃO CRÍTICA: Encontrar onde a tabela real começa (procurando a linha que contém a palavra 'Dia')
+    # --- CAPTURA DINÂMICA DE PARÂMETROS DIRETO DA SUA PLANILHA ---
+    try:
+        # Puxa o saldo inicial da célula A5 e meta final da célula G5 (ajustado pelo índice do pandas)
+        saldo_banca_inicial = float(df_raw.iloc[3, 0]) 
+        meta_final = float(df_raw.iloc[3, 6])
+    except:
+        # Valores de segurança caso a leitura falhe
+        saldo_banca_inicial = 200.0
+        meta_final = 500.0
+
+    # Identificar a linha exata do cabeçalho da tabela (onde tem a palavra 'Dia')
     linha_cabecalho = None
     for i, row in df_raw.iterrows():
         if row.astype(str).str.contains('Dia').any():
@@ -40,40 +50,31 @@ try:
             break
             
     if linha_cabecalho is not None:
-        # Reconstrói o DataFrame usando a linha correta como cabeçalho
         colunas_reais = df_raw.iloc[linha_cabecalho].tolist()
         df_sheets = df_raw.iloc[linha_cabecalho + 1:].copy()
         df_sheets.columns = colunas_reais
         df_sheets = df_sheets.reset_index(drop=True)
     else:
-        # Fallback caso a estrutura mude drasticamente
         df_sheets = df_raw.copy()
 
-    # Limpando possíveis linhas vazias da planilha
+    # Limpando linhas que não possuem a identificação do Dia
     df_sheets = df_sheets.dropna(subset=['Dia']).reset_index(drop=True)
     
-    # Garante que a coluna de rendimentos existe e está limpa de formatações de texto
+    # Trata e limpa a coluna de Rendimento transformando em número puro
     col_rendimento_nome = '✏️ Rendimento (R$)' if '✏️ Rendimento (R$)' in df_sheets.columns else 'Rendimento'
     df_sheets[col_rendimento_nome] = pd.to_numeric(df_sheets[col_rendimento_nome].astype(str).str.replace('R$', '').str.replace('.', '').str.replace(',', '.').str.strip(), errors='coerce').fillna(0.0)
 
 except Exception as e:
-    st.error(f"Erro ao conectar ou ler a estrutura da planilha: {e}")
+    st.error(f"Erro de conexão: {e}")
     st.stop()
 
-# --- PARÂMETROS ---
-saldo_banca_inicial = 200.0
-meta_final = 500.0
+# Meta diária padrão do projeto
 meta_diaria = 10.0
 
-# --- CÁLCULO DA CASCATA EM TEMPO REAL ---
+# --- CÁLCULO AUTOMÁTICO EM CASCATA ---
 def processar_cascata_financeira(df):
     df_calculado = df.copy()
-    saldos_iniciais = []
-    metas_do_dia = []
-    saldos_finais = []
-    progressos = []
-    meta_atingida = []
-    
+    saldos_iniciais, metas_do_dia, saldos_finais, progressos, meta_atingida = [], [], [], [], []
     saldo_atual = saldo_banca_inicial
     
     for idx, row in df_calculado.iterrows():
@@ -100,18 +101,18 @@ def processar_cascata_financeira(df):
 
 df_final = processar_cascata_financeira(df_sheets)
 
-# Identificando linhas preenchidas de fato
+# Busca o progresso atual baseado nos dias que você já preencheu valor maior que 0
 df_preenchidos = df_final[df_final[col_rendimento_nome] > 0]
 ultimo_saldo = df_final['Saldo Final (R$)'].iloc[len(df_preenchidos)-1] if not df_preenchidos.empty else saldo_banca_inicial
 progresso_porcentagem = min((ultimo_saldo / meta_final) * 100, 100.0)
 
-# Card informativo superior
+# Card de Resumo Visual no Topo
 st.markdown(f"""
 <div class="banca-card">
     <span style="color: #6b7280; font-size: 14px; font-weight: bold; text-transform: uppercase;">Resumo em Tempo Real (Planilha Ativa)</span>
-    <h3 style="margin: 5px 0 10px 0;">🎯 Meta Diária: R$ {meta_diaria:,.2f}</h3>
+    <h3 style="margin: 5px 0 10px 0;">🎯 Meta Diária do Plano: R$ {meta_diaria:,.2f}</h3>
     <p style="font-size: 16px; margin: 0;">
-        <b>Saldo Atual Conectado:</b> R$ {ultimo_saldo:,.2f} ➔ <b>Alvo Final:</b> R$ {meta_final:,.2f}
+        <b>Banca Atualizada:</b> R$ {ultimo_saldo:,.2f} ➔ <b>Alvo Final:</b> R$ {meta_final:,.2f}
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -123,8 +124,9 @@ tab1, tab2, tab3 = st.tabs(["📝 Lançamentos", "📊 Tabela Integrada", "📈 
 with tab1:
     st.subheader("Registrar Rendimento Direto no Google Sheets")
     
-    lista_dias = df_final['Dia'].astype(str).tolist()
-    dia_selecionado = st.selectbox("Selecione o Dia para Atualizar:", lista_dias)
+    # Criando a lista de dias de forma correta e isolada para evitar o erro de referência
+    datas_lista = df_final['Dia'].astype(str).tolist()
+    dia_selecionado = st.selectbox("Selecione o Dia para Atualizar:", datas_lista)
     
     valor_rendimento = st.number_input("Digite o Rendimento deste dia (R$):", min_value=0.0, step=1.0)
     
@@ -132,7 +134,7 @@ with tab1:
         idx_planilha = df_sheets[df_sheets['Dia'].astype(str) == dia_selecionado].index[0]
         df_sheets.at[idx_planilha, col_rendimento_nome] = valor_rendimento
         
-        # Reconstrói o arquivo completo para salvar de volta mantendo o cabeçalho original intacto
+        # Reconstrói a tabela inteira recolocando os cabeçalhos decorativos antes de enviar pro Drive
         df_salvar = df_raw.copy()
         for idx, row in df_sheets.iterrows():
             df_salvar.iloc[linha_cabecalho + 1 + idx] = row.tolist()
@@ -142,7 +144,7 @@ with tab1:
         st.rerun()
 
     st.markdown("---")
-    st.subheader("Histórico Lançado na Planilha")
+    st.subheader("Histórico de Ganhos Registrados")
     if not df_preenchidos.empty:
         for idx, row in df_preenchidos.iterrows():
             c1, c2, c3 = st.columns([2, 3, 1])
