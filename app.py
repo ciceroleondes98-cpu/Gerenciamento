@@ -25,31 +25,44 @@ st.markdown("""
 
 st.title("💰 Controle de Rendimentos Conectado")
 
-# Inicializando a conexão oficial com o Google Sheets utilizando os Secrets
+# Inicializando a conexão oficial com o Google Sheets
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # Lendo os dados direto da aba da sua planilha
-    df_sheets = conn.read(worksheet="🎯 Meta Diária", ttl=0) # ttl=0 garante que ele não use cache antigo e pegue o dado atualizado
+    # Lendo os dados brutos primeiro
+    df_raw = conn.read(worksheet="🎯 Meta Diária", ttl=0)
     
-    # Limpando possíveis linhas vazias da planilha original
+    # CORREÇÃO CRÍTICA: Encontrar onde a tabela real começa (procurando a linha que contém a palavra 'Dia')
+    linha_cabecalho = None
+    for i, row in df_raw.iterrows():
+        if row.astype(str).str.contains('Dia').any():
+            linha_cabecalho = i
+            break
+            
+    if linha_cabecalho is not None:
+        # Reconstrói o DataFrame usando a linha correta como cabeçalho
+        colunas_reais = df_raw.iloc[linha_cabecalho].tolist()
+        df_sheets = df_raw.iloc[linha_cabecalho + 1:].copy()
+        df_sheets.columns = colunas_reais
+        df_sheets = df_sheets.reset_index(drop=True)
+    else:
+        # Fallback caso a estrutura mude drasticamente
+        df_sheets = df_raw.copy()
+
+    # Limpando possíveis linhas vazias da planilha
     df_sheets = df_sheets.dropna(subset=['Dia']).reset_index(drop=True)
     
-    # Tratamento e conversão de dados de texto para valores numéricos utilizáveis
-    df_sheets['✏️ Rendimento (R$)'] = pd.to_numeric(df_sheets['✏️ Rendimento (R$)'].astype(str).str.replace('R$', '').str.replace('.', '').str.replace(',', '.').str.strip(), errors='coerce').fillna(0.0)
+    # Garante que a coluna de rendimentos existe e está limpa de formatações de texto
+    col_rendimento_nome = '✏️ Rendimento (R$)' if '✏️ Rendimento (R$)' in df_sheets.columns else 'Rendimento'
+    df_sheets[col_rendimento_nome] = pd.to_numeric(df_sheets[col_rendimento_nome].astype(str).str.replace('R$', '').str.replace('.', '').str.replace(',', '.').str.strip(), errors='coerce').fillna(0.0)
 
 except Exception as e:
-    st.error("Erro ao conectar com a sua planilha. Verifique se configurou corretamente os 'Secrets' no painel do Streamlit.")
+    st.error(f"Erro ao conectar ou ler a estrutura da planilha: {e}")
     st.stop()
 
-# --- BUSCA PARÂMETROS AUTOMÁTICOS DA SUA PLANILHA ---
-# Lendo a célula de Saldo Inicial e Meta Final direto do cabeçalho existente da sua tabela
-try:
-    saldo_banca_inicial = float(df_sheets.loc[0, 'Saldo Inicial (R$)']) if 'Saldo Inicial (R$)' in df_sheets.columns else 200.0
-    meta_final = 500.0 # Valor padrão conforme cabeçalho
-except:
-    saldo_banca_inicial, meta_final = 200.0, 500.0
-
+# --- PARÂMETROS ---
+saldo_banca_inicial = 200.0
+meta_final = 500.0
 meta_diaria = 10.0
 
 # --- CÁLCULO DA CASCATA EM TEMPO REAL ---
@@ -68,7 +81,7 @@ def processar_cascata_financeira(df):
         meta_dia_calculada = saldo_banca_inicial + (meta_diaria * (idx + 1))
         metas_do_dia.append(meta_dia_calculada)
         
-        rendimento = float(row['✏️ Rendimento (R$)'])
+        rendimento = float(row[col_rendimento_nome])
         saldo_final_dia = saldo_atual + rendimento
         saldos_finais.append(saldo_final_dia)
         
@@ -87,12 +100,12 @@ def processar_cascata_financeira(df):
 
 df_final = processar_cascata_financeira(df_sheets)
 
-# Pegando os dados consolidados atuais para o Card do topo
-ultimo_rendimento_val = df_final[df_final['✏️ Rendimento (R$)'] > 0]
-ultimo_saldo = df_final['Saldo Final (R$)'].iloc[len(ultimo_rendimento_val)-1] if not ultimo_rendimento_val.empty else saldo_banca_inicial
+# Identificando linhas preenchidas de fato
+df_preenchidos = df_final[df_final[col_rendimento_nome] > 0]
+ultimo_saldo = df_final['Saldo Final (R$)'].iloc[len(df_preenchidos)-1] if not df_preenchidos.empty else saldo_banca_inicial
 progresso_porcentagem = min((ultimo_saldo / meta_final) * 100, 100.0)
 
-# Card informativo
+# Card informativo superior
 st.markdown(f"""
 <div class="banca-card">
     <span style="color: #6b7280; font-size: 14px; font-weight: bold; text-transform: uppercase;">Resumo em Tempo Real (Planilha Ativa)</span>
@@ -106,56 +119,57 @@ st.progress(min(ultimo_saldo / meta_final, 1.0))
 
 tab1, tab2, tab3 = st.tabs(["📝 Lançamentos", "📊 Tabela Integrada", "📈 Gráfico de Evolução"])
 
-# --- ABA 1: LANÇAMENTOS (ESCREVE NA PLANILHA) ---
+# --- ABA 1: LANÇAMENTOS ---
 with tab1:
     st.subheader("Registrar Rendimento Direto no Google Sheets")
     
-    # Puxa a lista exata de dias/datas que você tem listadas na coluna A da planilha
     lista_dias = df_final['Dia'].astype(str).tolist()
     dia_selecionado = st.selectbox("Selecione o Dia para Atualizar:", lista_dias)
     
     valor_rendimento = st.number_input("Digite o Rendimento deste dia (R$):", min_value=0.0, step=1.0)
     
     if st.button("🚀 Confirmar e Salvar na Planilha"):
-        # Encontra o índice correspondente ao dia na tabela
         idx_planilha = df_sheets[df_sheets['Dia'].astype(str) == dia_selecionado].index[0]
+        df_sheets.at[idx_planilha, col_rendimento_nome] = valor_rendimento
         
-        # Altera o valor na tabela local
-        df_sheets.at[idx_planilha, '✏️ Rendimento (R$)'] = valor_rendimento
-        
-        # MÁGICA: Atualiza os dados de volta para a sua Planilha Google Real!
-        conn.update(worksheet="🎯 Meta Diária", data=df_sheets)
-        
+        # Reconstrói o arquivo completo para salvar de volta mantendo o cabeçalho original intacto
+        df_salvar = df_raw.copy()
+        for idx, row in df_sheets.iterrows():
+            df_salvar.iloc[linha_cabecalho + 1 + idx] = row.tolist()
+            
+        conn.update(worksheet="🎯 Meta Diária", data=df_salvar)
         st.success(f"Planilha Google Atualizada com Sucesso para o dia {dia_selecionado}!")
         st.rerun()
 
     st.markdown("---")
     st.subheader("Histórico Lançado na Planilha")
-    df_mostra_historico = df_final[df_final['✏️ Rendimento (R$)'] > 0]
-    if not df_mostra_historico.empty:
-        for idx, row in df_mostra_historico.iterrows():
+    if not df_preenchidos.empty:
+        for idx, row in df_preenchidos.iterrows():
             c1, c2, c3 = st.columns([2, 3, 1])
             with c1: st.markdown(f"📅 **Dia {row['Dia']}**")
-            with c2: st.markdown(f"💰 Rendimento: **R$ {row['✏️ Rendimento (R$)']:,.2f}**")
+            with c2: st.markdown(f"💰 Rendimento: **R$ {row[col_rendimento_nome]:,.2f}**")
             with c3:
                 if st.button("🗑️", key=f"del_{idx}"):
-                    df_sheets.at[idx, '✏️ Rendimento (R$)'] = 0.0
-                    conn.update(worksheet="🎯 Meta Diária", data=df_sheets)
+                    df_sheets.at[idx, col_rendimento_nome] = 0.0
+                    df_salvar = df_raw.copy()
+                    for i_salve, r_salve in df_sheets.iterrows():
+                        df_salvar.iloc[linha_cabecalho + 1 + i_salve] = r_salve.tolist()
+                    conn.update(worksheet="🎯 Meta Diária", data=df_salvar)
                     st.rerun()
 
 # --- ABA 2: TABELA GERAL ---
 with tab2:
     st.subheader("Dados Sincronizados com o Google Sheets")
-    colunas_exibir = ['Dia', 'Saldo Inicial (R$)', '✏️ Rendimento (R$)', '🎯 Meta do Dia (R$)', 'Saldo Final (R$)', 'Progresso (%)', 'Meta Atingida?']
+    colunas_exibir = ['Dia', 'Saldo Inicial (R$)', col_rendimento_nome, '🎯 Meta do Dia (R$)', 'Saldo Final (R$)', 'Progresso (%)', 'Meta Atingida?']
     st.dataframe(df_final[colunas_exibir], hide_index=True, use_container_width=True)
 
 # --- ABA 3: EVOLUÇÃO ---
 with tab3:
     st.subheader("Gráfico Progressivo de Evolução")
-    if not df_mostra_historico.empty:
+    if not df_preenchidos.empty:
         fig = go.Figure()
-        fig.add_trace(go.Bar(x=df_mostra_historico['Dia'], y=df_mostra_historico['Saldo Final (R$)'], name='Seu Saldo Final', marker_color='#10b981'))
-        fig.add_trace(go.Bar(x=df_mostra_historico['Dia'], y=df_mostra_historico['🎯 Meta do Dia (R$)'], name='Meta Acumulada', marker_color='#3b82f6'))
+        fig.add_trace(go.Bar(x=df_preenchidos['Dia'], y=df_preenchidos['Saldo Final (R$)'], name='Seu Saldo Final', marker_color='#10b981'))
+        fig.add_trace(go.Bar(x=df_preenchidos['Dia'], y=df_preenchidos['🎯 Meta do Dia (R$)'], name='Meta Acumulada', marker_color='#3b82f6'))
         fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'), barmode='group')
         st.plotly_chart(fig, use_container_width=True)
     else:
