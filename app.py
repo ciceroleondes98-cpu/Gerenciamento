@@ -76,20 +76,36 @@ url_planilha = st.text_input("Cole aqui o link completo da sua Planilha Google:"
 
 # Valores padrão de inicialização (evita que o layout quebre antes de colar a URL)
 val_saldo, val_meta_f, val_meta_d, val_dias = 200.0, 500.0, 10.0, 30
+dados_carregados_sheets = False
 
 if url_planilha:
     try:
         # Ajustando o link para formato de exportação de dados em CSV
         base_url = url_planilha.split("/edit")[0]
         url_config = f"{base_url}/gviz/tq?tqx=out:csv&sheet=config"
+        url_rendimentos = f"{base_url}/gviz/tq?tqx=out:csv&sheet=rendimentos"
         
+        # Tenta carregar as configurações
         df_conf_sheet = pd.read_csv(url_config)
         val_saldo = float(df_conf_sheet['saldo_inicial'].iloc[0])
         val_meta_f = float(df_conf_sheet['meta_final'].iloc[0])
         val_meta_d = float(df_conf_sheet['meta_diaria'].iloc[0])
         val_dias = int(df_conf_sheet['qtd_dias'].iloc[0])
+        
+        # Tenta carregar o histórico existente na planilha
+        try:
+            df_rend_sheet = pd.read_csv(url_rendimentos)
+            if not df_rend_sheet.empty and 'Data' in df_rend_sheet.columns:
+                # Sincroniza o histórico antigo para a memória local do app
+                if 'tabela_memoria' not in st.session_state:
+                    st.session_state.tabela_memoria = df_rend_sheet.copy()
+                dados_carregados_sheets = True
+        except:
+            pass # Se a aba de rendimentos falhar, ele cria a padrão embaixo
+            
+        st.success("✅ Conectado com sucesso à Planilha Google!")
     except Exception as e:
-        st.warning("⚠️ Não foi possível ler os dados iniciais da planilha. Usando valores padrão temporários.")
+        st.error("⚠️ Erro de Acesso: Verifique se sua planilha está compartilhada como 'Qualquer pessoa com o link pode ler' e se o nome da aba é 'config'.")
 
 # Interface de Configurações
 st.subheader("⚙️ Configuração da Banca e Período")
@@ -110,7 +126,7 @@ if st.button("💾 Salvar Configurações da Banca"):
         'saldo_inicial': [saldo_banca_inicial], 'meta_final': [meta_final],
         'meta_diaria': [meta_diaria], 'qtd_dias': [quantidade_dias]
     })
-    st.success("Parâmetros salvos com sucesso!")
+    st.success("Configurações atualizadas! Copie os dados abaixo e cole na sua aba 'config' se necessário.")
 
 # 4. CARREGAR HISTÓRICO DE RENDIMENTOS
 datas_fixas = [(datetime.date(2026, 6, 1) + datetime.timedelta(days=i)).strftime('%d/%m/%Y') for i in range(quantidade_dias)]
@@ -180,7 +196,7 @@ with tab1:
         idx_data = st.session_state.tabela_memoria[st.session_state.tabela_memoria['Data'] == data_selecionada].index[0]
         st.session_state.tabela_memoria.at[idx_data, '📈 Rendimento (R$)'] = valor_rendimento
         st.session_state.tabela_memoria.at[idx_data, 'Preenchido'] = True
-        st.success("Gravado com sucesso!")
+        st.success("Gravado na memória local do app!")
         st.rerun()
 
     st.markdown("---")
@@ -220,4 +236,4 @@ with tab3:
         st.info("Insira dados de rendimento para visualizar o gráfico de evolução.")
 
 if not url_planilha:
-    st.info("ℹ️ Caso queira conectar com sua planilha do Google Sheets, insira o link no campo inicial do topo.")
+    st.info("ℹ️ Insira o link da planilha no topo para ativar a sincronização de leitura automática.")
