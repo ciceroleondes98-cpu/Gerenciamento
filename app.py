@@ -210,4 +210,14 @@ with tab3:
         
         fig.update_layout(
             paper_bgcolor='rgba(0,0,0,0)', 
-            plot_bgcolor='rgba(0,0
+            plot_bgcolor='rgba(0,0,0,0)', 
+            font=dict(color='#ffffff'), 
+            barmode='group',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Insira dados de rendimento para visualizar o gráfico de evolução.")
+
+if not url_planilha:
+    st.info("ℹ️ Caso queira conectar com sua planilha do Google Sheets, insira o link no campo inicial do topo.")
