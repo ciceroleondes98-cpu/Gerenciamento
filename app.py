@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import datetime
 import plotly.graph_objects as go
-from streamlit_gsheets import GSheetsConnection
 
 # 1. Configuração da página para um visual limpo e moderno
 st.set_page_config(page_title="Gerenciador de Banca", page_icon="🪙", layout="centered")
@@ -58,68 +57,52 @@ st.markdown("""
 
 st.title("🪙 Controle de Rendimentos Pro")
 
-# Valores padrão de segurança
-val_saldo, val_meta_f, val_meta_d, val_dias = 200.0, 500.0, 10.0, 30
-df_rend_sheet = pd.DataFrame()
-
-# --- CONEXÃO AUTOMÁTICA VIA GSHEETS ---
-try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    df_conf_sheet = conn.read(worksheet="config", ttl=0)
-    if not df_conf_sheet.empty and 'saldo_inicial' in df_conf_sheet.columns:
-        val_saldo = float(df_conf_sheet['saldo_inicial'].iloc[0])
-        val_meta_f = float(df_conf_sheet['meta_final'].iloc[0])
-        val_meta_d = float(df_conf_sheet['meta_diaria'].iloc[0])
-        val_dias = int(df_conf_sheet['qtd_dias'].iloc[0])
-    df_rend_sheet = conn.read(worksheet="rendimentos", ttl=0)
-    st.success("📊 Banco de dados sincronizado permanentemente com o Google Sheets!")
-except Exception as e:
-    st.error("⚠️ Sincronizando banco de dados...")
+# --- GERENCIAMENTO DE BANCO DE DADOS LOCAL EM CACHE (BLINDADO) ---
+if 'saldo_inicial' not in st.session_state:
+    st.session_state.saldo_inicial = 200.0
+if 'meta_final' not in st.session_state:
+    st.session_state.meta_final = 500.0
+if 'meta_diaria' not in st.session_state:
+    st.session_state.meta_diaria = 10.0
+if 'qtd_dias' not in st.session_state:
+    st.session_state.qtd_dias = 30
 
 # Interface de Configurações
 st.subheader("⚙️ Configuração da Banca e Período")
 col_banca1, col_banca2, col_banca3, col_banca4 = st.columns(4)
 
 with col_banca1:
-    saldo_banca_inicial = st.number_input("Saldo Inicial (R$):", min_value=0.0, value=val_saldo, step=10.0)
+    saldo_banca_inicial = st.number_input("Saldo Inicial (R$):", min_value=0.0, value=st.session_state.saldo_inicial, step=10.0)
 with col_banca2:
-    meta_final = st.number_input("Meta Final Geral (R$):", min_value=1.0, value=val_meta_f, step=50.0)
+    meta_final = st.number_input("Meta Final Geral (R$):", min_value=1.0, value=st.session_state.meta_final, step=50.0)
 with col_banca3:
-    meta_diaria = st.number_input("Meta Diária (R$):", min_value=0.0, value=val_meta_d, step=1.0)
+    meta_diaria = st.number_input("Meta Diária (R$):", min_value=0.0, value=st.session_state.meta_diaria, step=1.0)
 with col_banca4:
-    quantidade_dias = st.number_input("Qtd de Dias:", min_value=1, max_value=365, value=val_dias, step=1)
+    quantidade_dias = st.number_input("Qtd de Dias:", min_value=1, max_value=365, value=st.session_state.qtd_dias, step=1)
 
-if st.button("💾 Salvar Parâmetros no Google Sheets"):
-    df_salvar_conf = pd.DataFrame({
-        'saldo_inicial': [saldo_banca_inicial], 'meta_final': [meta_final],
-        'meta_diaria': [meta_diaria], 'qtd_dias': [quantidade_dias]
-    })
-    try:
-        conn.update(worksheet="config", data=df_salvar_conf)
-        st.success("✅ Configurações salvas!")
-        st.rerun()
-    except:
-        st.error("Erro ao salvar parâmetros.")
+if st.button("💾 Salvar Parâmetros Operacionais"):
+    st.session_state.saldo_inicial = saldo_banca_inicial
+    st.session_state.meta_final = meta_final
+    st.session_state.meta_diaria = meta_diaria
+    st.session_state.qtd_dias = quantidade_dias
+    st.success("✅ Configurações salvas no painel com sucesso!")
+    st.rerun()
 
 # 4. HISTÓRICO DE RENDIMENTOS
 datas_fixas = [(datetime.date(2026, 6, 1) + datetime.timedelta(days=i)).strftime('%d/%m/%Y') for i in range(quantidade_dias)]
 
-if df_rend_sheet.empty or 'Data' not in df_rend_sheet.columns or len(df_rend_sheet) < 1:
-    df_base = pd.DataFrame({
+if 'tabela_memoria' not in st.session_state or len(st.session_state.tabela_memoria) != quantidade_dias:
+    st.session_state.tabela_memoria = pd.DataFrame({
         'Data': datas_fixas,
         '📈 Rendimento (R$)': [0.0] * quantidade_dias,
         'Preenchido': [False] * quantidade_dias
     })
-else:
-    df_base = df_rend_sheet.copy()
-
-if 'tabela_memoria' not in st.session_state:
-    st.session_state.tabela_memoria = df_base
 
 def calcular_tabela_dinamica():
     df = st.session_state.tabela_memoria.copy()
     saldos_iniciais, metas_do_dia, saldos_finais, progressos = [], [], [], []
     saldo_atual = saldo_banca_inicial
+    
     for idx, row in df.iterrows():
         saldos_iniciais.append(saldo_atual)
         meta_dia_calculada = saldo_banca_inicial + (meta_diaria * (idx + 1))
@@ -130,6 +113,7 @@ def calcular_tabela_dinamica():
         prog_porc = min((saldo_final_dia / meta_final) * 100, 100.0)
         progressos.append(f"{prog_porc:.1f}%")
         saldo_atual = saldo_final_dia
+        
     df['Saldo Inicial (R$)'] = saldos_iniciais
     df['🏆 Meta do Dia (R$)'] = metas_do_dia
     df['Saldo Final (R$)'] = saldos_finais
@@ -137,7 +121,7 @@ def calcular_tabela_dinamica():
     return df
 
 df_calculado = calcular_tabela_dinamica()
-df_preenchidos = df_calculado[df_calculado['Preenchido'].astype(str).str.lower() == 'true']
+df_preenchidos = df_calculado[df_calculado['Preenchido'] == True]
 ultimo_saldo = df_preenchidos['Saldo Final (R$)'].iloc[-1] if not df_preenchidos.empty else saldo_banca_inicial
 progresso_porcentagem = min((ultimo_saldo / meta_final) * 100, 100.0)
 
@@ -160,20 +144,31 @@ with tab1:
     st.subheader("Novo Registro Diário")
     data_selecionada = st.selectbox("Escolha a Data:", df_calculado['Data'].tolist())
     valor_rendimento = st.number_input("Valor do Rendimento (R$):", min_value=0.0, value=0.0, step=1.0)
+    
     if valor_rendimento < meta_diaria:
         st.markdown("<p class='meta-abaixo'>⚠️ Abaixo da meta!</p>", unsafe_allow_html=True)
     else:
         st.markdown("<p class='meta-atingida'>✅ Meta atingida!</p>", unsafe_allow_html=True)
-    if st.button("Confirmar e Gravar no Sheets"):
+        
+    if st.button("Confirmar e Salvar Registro"):
         idx_data = st.session_state.tabela_memoria[st.session_state.tabela_memoria['Data'] == data_selecionada].index[0]
         st.session_state.tabela_memoria.at[idx_data, '📈 Rendimento (R$)'] = valor_rendimento
         st.session_state.tabela_memoria.at[idx_data, 'Preenchido'] = True
-        try:
-            conn.update(worksheet="rendimentos", data=st.session_state.tabela_memoria)
-            st.success("🔥 Salvo com sucesso no Google Sheets!")
-            st.rerun()
-        except Exception as e:
-            st.error("Erro ao salvar dados.")
+        st.success("🔥 Lançamento salvo com sucesso no painel!")
+        st.rerun()
+
+    st.markdown("---")
+    st.subheader("⏱️ Histórico Recente")
+    if not df_preenchidos.empty:
+        for idx, row in df_preenchidos.iterrows():
+            col_hist1, col_hist2, col_hist3 = st.columns([3, 3, 1])
+            with col_hist1: st.markdown(f"📅 **{row['Data']}**")
+            with col_hist2: st.markdown(f"💰 Rendimento: <span style='color: #f1b813; font-weight: bold;'>R$ {float(row['📈 Rendimento (R$)']):,.2f}</span>", unsafe_allow_html=True)
+            with col_hist3:
+                if st.button("🗑️", key=f"del_{idx}"):
+                    st.session_state.tabela_memoria.at[idx, '📈 Rendimento (R$)'] = 0.0
+                    st.session_state.tabela_memoria.at[idx, 'Preenchido'] = False
+                    st.rerun()
 
 with tab2:
     st.subheader("📋 Tabela Geral")
