@@ -6,27 +6,27 @@ import plotly.graph_objects as go
 # 1. Configuração da página para um visual limpo e moderno
 st.set_page_config(page_title="Gerenciador de Banca", page_icon="💰", layout="centered")
 
-# 2. Estilização PREMIUM com as cores exatas do site enviado (Fundo Dark, Cards Cinza e Detalhes em Verde Esmeralda)
+# 2. Estilização PREMIUM (Fundo Grafite Escuro, Cards em Cinza Azulado e Destaques Esmeralda)
 st.markdown("""
     <style>
-    /* Fundo total do aplicativo (Escuro) */
+    /* Fundo geral da aplicação */
     .stApp { 
-        background-color: #0b0f19; 
+        background-color: #0b111e; 
         color: #ffffff; 
     }
     
-    /* Títulos e Subtítulos em Verde Esmeralda Vivo */
+    /* Cabeçalhos e Títulos em Verde Esmeralda Neon */
     h1, h2, h3, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 { 
         color: #10b981 !important; 
         font-weight: 700; 
     }
     
-    /* Textos secundários e labels dos inputs */
+    /* Textos secundários e descrições dos inputs */
     .stWidgetForm label, div[data-testid="stMarkdownContainer"] p { 
         color: #9ca3af; 
     }
     
-    /* Estilização dos Cards (Cinza Escuro Arredondado com borda sutil igual ao site) */
+    /* Cards de Informação arredondados e com bordas sutis iguaizinhos ao site enviado */
     .banca-card { 
         background-color: #111827; 
         padding: 20px; 
@@ -37,7 +37,7 @@ st.markdown("""
     .banca-card h3 { color: #10b981 !important; margin-top: 0; }
     .banca-card p, .banca-card span { color: #e5e7eb !important; }
     
-    /* Botão Principal em Verde Esmeralda */
+    /* Botão Principal customizado em Esmeralda */
     .stButton>button { 
         background-color: #10b981; 
         color: #ffffff; 
@@ -52,11 +52,11 @@ st.markdown("""
         color: #ffffff; 
     }
     
-    /* Feedbacks de Metas */
+    /* Alertas de metas */
     .meta-atingida { color: #10b981; font-weight: bold; font-size: 16px; }
-    .meta-abaixo { color: #ef4444; font-weight: bold; font-size: 16px; }
+    .meta-abaixo { color: #f87171; font-weight: bold; font-size: 16px; }
     
-    /* Abas customizadas */
+    /* Abas superiores */
     .stTabs [data-baseweb="tab"] { 
         color: #9ca3af; 
     }
@@ -113,11 +113,12 @@ try:
             'saldo_inicial': [saldo_banca_inicial], 'meta_final': [meta_final],
             'meta_diaria': [meta_diaria], 'qtd_dias': [quantidade_dias]
         })
-        st.success("🎯 Parâmetros aplicados com sucesso na tela atual!")
+        st.success("🎯 Parâmetros gravados e aplicados com sucesso!")
 
-    # 4. CARREGAR HISTÓRICO DE RENDIMENTOS NA MEMÓRIA DA SESSÃO (Evita apagar ao mexer no app)
+    # 4. CARREGAR HISTÓRICO DE RENDIMENTOS NA MEMÓRIA DA SESSÃO
     datas_fixas = [(datetime.date(2026, 6, 1) + datetime.timedelta(days=i)).strftime('%d/%m/%Y') for i in range(quantidade_dias)]
     
+    # Se a tabela de memória não existir no navegador ou mudar o tamanho de dias, reinicia ela de forma limpa
     if 'tabela_memoria' not in st.session_state or len(st.session_state.tabela_memoria) != quantidade_dias:
         st.session_state.tabela_memoria = pd.DataFrame({
             'Data': datas_fixas,
@@ -125,7 +126,7 @@ try:
             'Preenchido': [False] * quantidade_dias
         })
 
-    # Função interna para gerar a cascata matemática de juros e progressões
+    # Função interna para cascata matemática
     def calcular_tabela_dinamica():
         df = st.session_state.tabela_memoria.copy()
         saldos_iniciais, metas_do_dia, saldos_finais, progressos = [], [], [], []
@@ -153,13 +154,13 @@ try:
     ultimo_saldo = df_preenchidos['Saldo Final (R$)'].iloc[-1] if not df_preenchidos.empty else saldo_banca_inicial
     progresso_porcentagem = min((ultimo_saldo / meta_final) * 100, 100.0)
 
-    # Card informativo idêntico ao padrão premium escuro do site enviado
+    # Card informativo com visual dark premium
     st.markdown(f"""
     <div class="banca-card">
-        <span>📋 RESUMO DO OBJETIVO</span>
-        <h3 style="margin: 10px 0;">🎯 Meta Diária Definida: R$ {meta_diaria:,.2f}</h3>
+        <span style="color: #9ca3af; font-size: 13px; font-weight: bold; letter-spacing: 0.05em;">📋 RESUMO DO OBJETIVO</span>
+        <h3 style="margin: 8px 0 12px 0;">🎯 Meta Diária Definida: R$ {meta_diaria:,.2f}</h3>
         <p style="font-size: 15px; margin: 0;">
-            <b>Saldo Atualizado:</b> R$ {ultimo_saldo:,.2f} ➔ <b>Alvo Final:</b> R$ {meta_final:,.2f} | <b>Período total:</b> {quantidade_dias} dias
+            <b>Saldo Atualizado:</b> R$ {ultimo_saldo:,.2f} ➔ <b>Alvo Final:</b> R$ {meta_final:,.2f} | <b>Período:</b> {quantidade_dias} dias
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -171,8 +172,7 @@ try:
 
     with tab1:
         st.subheader("🎯 Novo Registro Diário")
-        datas_lista = st.session_state.tabela_memoria['Data'].tolist()
-        data_selecionada = st.selectbox("Escolha a Data para Registrar/Alterar:", datas_lista)
+        data_selecionada = st.selectbox("Escolha a Data para Registrar/Alterar:", datas_lista := st.session_state.tabela_memoria['Data'].tolist())
         valor_rendimento = st.number_input("Valor do Rendimento (R$):", min_value=0.0, value=0.0, step=1.0)
         
         if valor_rendimento < meta_diaria:
@@ -184,7 +184,7 @@ try:
             idx_data = st.session_state.tabela_memoria[st.session_state.tabela_memoria['Data'] == data_selecionada].index[0]
             st.session_state.tabela_memoria.at[idx_data, '✏️ Rendimento (R$)'] = valor_rendimento
             st.session_state.tabela_memoria.at[idx_data, 'Preenchido'] = True
-            st.success("✅ Registro gravado na memória do aplicativo!")
+            st.success("✅ Gravado localmente na memória ativa!")
             st.rerun()
 
         st.markdown("---")
@@ -201,20 +201,20 @@ try:
                         st.rerun()
 
     with tab2:
-        st.subheader("📊 Tabela Geral de Evolução")
+        st.subheader("📊 Tabela Geral de Rendimentos")
         st.dataframe(df_calculado[['Data', 'Saldo Inicial (R$)', '✏️ Rendimento (R$)', '🎯 Meta do Dia (R$)', 'Saldo Final (R$)', 'Progresso (%)']], hide_index=True, use_container_width=True)
 
     with tab3:
-        st.subheader("📈 Gráfico de Evolução Dinâmica")
+        st.subheader("📈 Gráfico de Evolução")
         if not df_preenchidos.empty:
             fig = go.Figure()
             fig.add_trace(go.Bar(x=df_preenchidos['Data'], y=df_preenchidos['Saldo Final (R$)'], name='Saldo Final', marker_color='#10b981'))
             fig.add_trace(go.Bar(x=df_preenchidos['Data'], y=df_preenchidos['🎯 Meta do Dia (R$)'], name='Meta do Dia', marker_color='#3b82f6'))
-            fig.add_trace(go.Scatter(x=df_preenchidos['Data'], y=[meta_final]*len(df_preenchidos), mode='lines', name='Meta Final', line=dict(color='#ef4444', width=3, dash='dash')))
+            fig.add_trace(go.Scatter(x=df_preenchidos['Data'], y=[meta_final]*len(df_preenchidos), mode='lines', name='Meta Final', line=dict(color='#f87171', width=3, dash='dash')))
             fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'), barmode='group')
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("Insira registros na aba de lançamentos para habilitar o gráfico.")
+            st.info("Insira registros na aba de lançamentos para habilitar a visão gráfica.")
 
 except Exception as e:
-    st.error("Erro ao processar as informações. Certifique-se de que o link está preenchido corretamente.")
+    st.error("Erro ao ler dados da planilha. Certifique-se de que o link completo está correto e que o formato está público.")
