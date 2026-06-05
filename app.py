@@ -29,18 +29,24 @@ st.markdown("""
 st.title("🪙 Controle de Rendimentos Pro")
 
 # Integração de persistência via GitHub API
-TOKEN = st.secrets.get("GITHUB_TOKEN", "")
-REPO = st.secrets.get("REPO_NAME", "")
+TOKEN = st.secrets.get("GITHUB_TOKEN", "").strip()
+REPO = st.secrets.get("REPO_NAME", "").strip()
 FILE_PATH = "dados_banca.json"
+BRANCH = "main"  # Forçando o uso da branch correta vista no seu GitHub
 
 def carregar_dados_github():
-    url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
-    headers = {"Authorization": f"token {TOKEN}"}
+    url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}?ref={BRANCH}"
+    headers = {
+        "Authorization": f"Bearer {TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
         conteudo = response.json()
-        dados_decodificados = base64.b64decode(conteudo["content"]).decode("utf-8")
+        dados_decodificados = base64.b64decode(conteudo["content"]).decode("utf-8").strip()
         try:
+            if not dados_decodificados or dados_decodificados == "{}":
+                return {}, conteudo["sha"]
             return json.loads(dados_decodificados), conteudo["sha"]
         except:
             return {}, conteudo["sha"]
@@ -48,12 +54,21 @@ def carregar_dados_github():
 
 def salvar_dados_github(dados, sha=None):
     url = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
-    headers = {"Authorization": f"token {TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    dados_json = json.dumps(dados, indent=4)
+    headers = {
+        "Authorization": f"Bearer {TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    dados_json = json.dumps(dados, indent=4, ensure_ascii=False)
     dados_bytes = base64.b64encode(dados_json.encode("utf-8")).decode("utf-8")
-    payload = {"message": "Atualizando dados da banca", "content": dados_bytes}
+    
+    payload = {
+        "message": "Atualizando dados da banca via app",
+        "content": dados_bytes,
+        "branch": BRANCH
+    }
     if sha:
         payload["sha"] = sha
+        
     response = requests.put(url, headers=headers, json=payload)
     return response.status_code in [200, 201]
 
